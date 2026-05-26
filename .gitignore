@@ -1,69 +1,64 @@
-# Prerequisites
-*.d
-
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Linker files
-*.ilk
-
-# Debugger Files
-*.pdb
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-*.so.*
-
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
-*.exe
-*.out
-*.app
-
 # Build directories
 build/
-Build/
 build-*/
+out/
+cmake-build-*/
 
-# CMake generated files
-CMakeFiles/
+# CMake generated
 CMakeCache.txt
+CMakeFiles/
 cmake_install.cmake
 Makefile
-install_manifest.txt
-compile_commands.json
+!CMakeLists.txt
 
-# Temporary files
+# Compiled objects
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+
+# Qt generated
+*.pro.user
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Backup files
+*.bak
+*.bak*
+*.before_*
 *.tmp
 *.log
-*.bak
-*.swp
 
-# vcpkg
-vcpkg_installed/
+# Patient data — RGPD CRITIQUE
+*.nii
+*.nii.gz
+*.dcm
+*.dicom
+data/
+patients/
+MOULID_*
+T0/
+T1/
+T2/
 
-# debug information files
-*.dwo
+# Output générés
+slices/
+results/
+*.csv
 
-# test output & cache
-Testing/
-.cache/
+# Python
+__pycache__/
+*.pyc
+.venv/
