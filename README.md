@@ -73,35 +73,3 @@ cmake .. -G "Visual Studio 16 2019"
 cmake --build . --config Release
 ```
 
----
-
-##  Quick Start
-
-### Three-step user workflow
-
-**(S1) Load CBCT volumes**
-Through `File → Load CBCT`, select multiple `.nii.gz` files or DICOM directories acquired at different timepoints. Volumes are automatically labeled T₀, T₁, T₂... according to acquisition chronology.
-
-**(S2) Load cephalometric landmarks**
-Import the ALI_CBCT JSON markup files corresponding to each timepoint. CBCTAlign parses the 3D Slicer JSON structure and populates the landmark table with ANS coordinates in millimeters. Manual refinement is supported through direct cell editing.
-
-**(S3) Run pipeline and visualize results**
-Click `Run Pipeline` to trigger the full workflow: landmark-initialized rigid registration → 2D slice extraction → FOV normalization → MCAGPC validation. Results display in a synchronized 3×3 grid view (axial, coronal, sagittal × T₀, T₁, T₂) with interactive slice navigation.
-
-
-##  Validation Example
-
-On a representative longitudinal clinical case (3 timepoints, 11 months follow-up, NewTom VGi EVO scanner):
-
-| Metric                                  | T₀ → T₁ | T₀ → T₂ |
-|-----------------------------------------|---------|---------|
-| ANS landmark displacement (raw, mm)     | 21.73   | 45.19   |
-| ANS landmark displacement (aligned, mm) | **0.25**| **0.51**|
-| Mattes MI (final)                       | −0.5315 | −0.5577 |
-| Registration iterations                 | 15      | 13      |
-
-Sub-millimeter post-registration accuracy is achieved despite heterogeneous fields of view (craniofacial T₀/T₂ at 103×103×101 mm vs. reduced dental T₁ at 83×83×50 mm). Total processing time: **~90 seconds** on a standard laptop (Intel Core i7, 16 GB RAM), without GPU acceleration.
-
----
-
-## 📊 Pipeline Overview
