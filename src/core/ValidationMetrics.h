@@ -50,7 +50,7 @@ public:
     // Contribution originale
     double computeMCAGPC(const Slice2D& s1, const Slice2D& s2,
                          const Eigen::Vector3d& lm1, const Eigen::Vector3d& lm2,
-                         double maxError = 5.0);
+                         double maxError = 2.0);
 
     double computeIFST(const std::vector<double>& mcagpcValues,
                        const std::vector<double>& timeDeltas,

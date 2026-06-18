@@ -101,14 +101,34 @@ void MainWindow::setupUI()
     mainLayout->setContentsMargins(2, 2, 2, 2);
     auto* splitter = new QSplitter(Qt::Horizontal);
 
-    auto* leftPanel = new QWidget;
-    auto* leftLayout = new QVBoxLayout(leftPanel);
+    // ===== WORKFLOW STEPS COLUMN (NEW) =====
+    m_stepList = new QListWidget;
+    m_stepList->setMaximumWidth(170);
+    m_stepList->setMinimumWidth(150);
+    m_stepList->addItem("1 · Load CBCT");
+    m_stepList->addItem("2 · Landmarks");
+    m_stepList->addItem("3 · Registration");
+    m_stepList->addItem("4 · Extraction");
+    m_stepList->addItem("5 · Validation");
+    m_stepList->setCurrentRow(0);
+    m_stepList->setStyleSheet(
+        "QListWidget { font-size:13px; border:1px solid #ccc; "
+        "border-radius:4px; background:#fafafa; }"
+        "QListWidget::item { padding:10px 8px; border-bottom:1px solid #eee; }"
+        "QListWidget::item:selected { background:#2196F3; color:white; }");
+    splitter->addWidget(m_stepList);
+
+    m_leftPanel = new QWidget;
+    auto* leftLayout = new QVBoxLayout(m_leftPanel);
     leftLayout->setSpacing(4);
     leftLayout->setContentsMargins(4, 4, 4, 4);
 
     // --- CBCT Volumes ---
-    auto* grpVol = new QGroupBox("CBCT Volumes");
-    auto* volLayout = new QVBoxLayout(grpVol);
+   /* auto* grpVol = new QGroupBox("CBCT Volumes");
+    auto* volLayout = new QVBoxLayout(grpVol);*/
+// --- CBCT Volumes ---
+    m_grpVolumes = new QGroupBox("1 · Load CBCT Volumes");
+    auto* volLayout = new QVBoxLayout(m_grpVolumes);
     volLayout->setSpacing(3);
 
     m_volumeList = new QListWidget;
@@ -124,15 +144,17 @@ void MainWindow::setupUI()
     btnRow->addWidget(m_btnLoadNIfTI);
     volLayout->addLayout(btnRow);
 
+    leftLayout->addWidget(m_grpVolumes);
+
+    // Run Pipeline / Stop : hors du groupe volumes, pour gestion separee
     m_btnRunPipeline = new QPushButton("▶ Run Pipeline");
     m_btnRunPipeline->setStyleSheet(GREEN_BTN);
     m_btnRunPipeline->setEnabled(false);
-    volLayout->addWidget(m_btnRunPipeline);
+    leftLayout->addWidget(m_btnRunPipeline);
 
     m_btnStop = new QPushButton("Stop");
     m_btnStop->setEnabled(false);
-    volLayout->addWidget(m_btnStop);
-    leftLayout->addWidget(grpVol);
+    leftLayout->addWidget(m_btnStop);
 
     // --- Cephalometric Landmarks ---
     m_grpLandmarks = new QGroupBox("Cephalometric Landmarks");
@@ -206,7 +228,7 @@ void MainWindow::setupUI()
     // leftLayout->addWidget(m_grpMetrics);
 
     leftLayout->addStretch();
-    splitter->addWidget(leftPanel);
+    splitter->addWidget(m_leftPanel);
 
     auto* rightPanel = new QWidget;
     auto* rightLayout = new QVBoxLayout(rightPanel);
@@ -231,11 +253,21 @@ void MainWindow::setupUI()
     rightLayout->addWidget(m_scrollArea);
 
     splitter->addWidget(rightPanel);
-    splitter->setStretchFactor(0, 1);
-    splitter->setStretchFactor(1, 5);
+    splitter->setStretchFactor(0, 0);  // colonne etapes : largeur fixe
+    splitter->setStretchFactor(1, 2);  // panneau gauche
+    splitter->setStretchFactor(2, 6);  // zone images
 
     mainLayout->addWidget(splitter);
     statusBar()->showMessage("Ready — Load 2+ CBCT volumes to start");
+
+    // Etat initial : etape 1 (Load CBCT) — panneau gauche masque, tout a droite
+    m_leftPanel->setVisible(false);
+    m_grpVolumes->setVisible(false);
+    m_grpLandmarks->setVisible(false);
+    m_grpSliceControls->setVisible(false);
+    m_btnRunPipeline->setVisible(false);
+    m_btnStop->setVisible(false);
+    displayStep1Attributes();
 }
 
 void MainWindow::connectSignals()
@@ -250,10 +282,13 @@ void MainWindow::connectSignals()
     connect(m_sliderSliceNum, &QSlider::valueChanged, this, &MainWindow::onSliceNumChanged);
     connect(m_spinSliceNum, QOverload<int>::of(&QSpinBox::valueChanged),
             m_sliderSliceNum, &QSlider::setValue);
+    connect(m_stepList, &QListWidget::currentRowChanged,
+            this, &MainWindow::onStepClicked);
 }
 
 void MainWindow::createMenuBar()
 {
+    // ===== FILE =====
     auto* mFile = menuBar()->addMenu("&File");
     mFile->addAction("Open DICOM...", this, &MainWindow::onLoadDICOM);
     mFile->addAction("Open NIfTI...", this, &MainWindow::onLoadNIfTI);
@@ -263,6 +298,62 @@ void MainWindow::createMenuBar()
     mFile->addSeparator();
     mFile->addAction("Quit", this, &QMainWindow::close);
 
+    // ===== LANDMARKS =====
+    auto* mLandmarks = menuBar()->addMenu("&Landmarks");
+    mLandmarks->addAction("Detect (ALI_CBCT)...", [this]() {
+        QMessageBox::information(this, "Landmark Detection",
+            "Automatic cephalometric landmark detection via ALI_CBCT.\n"
+            "(Integration in progress)");
+    });
+    mLandmarks->addAction("Edit Landmarks...", [this]() {
+        QMessageBox::information(this, "Edit Landmarks",
+            "Manual refinement of landmark coordinates.\n"
+            "(Integration in progress)");
+    });
+
+    // ===== REGISTRATION =====
+    auto* mReg = menuBar()->addMenu("&Registration");
+    mReg->addAction("Run Pipeline", this, &MainWindow::onRunPipeline);
+    mReg->addSeparator();
+    mReg->addAction("Registration Settings...", [this]() {
+        QMessageBox::information(this, "Registration Settings",
+            "Mutual Information bins, multi-resolution levels, sampling rate.\n"
+            "(Integration in progress)");
+    });
+
+    // ===== VIEW =====
+    auto* mView = menuBar()->addMenu("&View");
+    mView->addAction("Comparison Grid (3xN)", [this]() {
+        QMessageBox::information(this, "View",
+            "Synchronized 3xN comparison grid (already shown in the main panel).");
+    });
+    mView->addAction("Overlay / Difference...", [this]() {
+        QMessageBox::information(this, "Overlay / Difference",
+            "Overlay and difference visualization of aligned slices.\n"
+            "(Integration in progress)");
+    });
+    mView->addAction("MCAGPC Details...", [this]() {
+        QMessageBox::information(this, "MCAGPC Details",
+            "Detailed MCAGPC scores: SSIM, NCC, and landmark displacement per orientation.\n"
+            "(Integration in progress)");
+    });
+
+    // ===== EXPORT =====
+    auto* mExport = menuBar()->addMenu("&Export");
+    mExport->addAction("Export Aligned Volumes (NIfTI)...", [this]() {
+        QMessageBox::information(this, "Export",
+            "Export aligned volumes in NIfTI format.\n(Integration in progress)");
+    });
+    mExport->addAction("Export Slices (PNG)...", [this]() {
+        QMessageBox::information(this, "Export",
+            "Export 2D slices as structured PNG series.\n(Integration in progress)");
+    });
+    mExport->addAction("Export MCAGPC Report (CSV)...", [this]() {
+        QMessageBox::information(this, "Export",
+            "Export MCAGPC validation metrics as CSV.\n(Integration in progress)");
+    });
+
+    // ===== HELP =====
     auto* mHelp = menuBar()->addMenu("&Help");
     mHelp->addAction("About", [this]() {
         QMessageBox::about(this, "CBCTAlign",
@@ -341,6 +432,7 @@ void MainWindow::onLoadDICOM()
         statusBar()->showMessage(
             QString("%1 DICOM volume(s) loaded").arg(loaded), 5000);
     }
+    if (m_stepList->currentRow() == 0) displayStep1Attributes();
 }
 void MainWindow::onLoadNIfTI()
 {
@@ -387,6 +479,7 @@ void MainWindow::onLoadNIfTI()
         statusBar()->showMessage(
             QString("%1 NIfTI volume(s) loaded").arg(loaded), 5000);
     }
+    if (m_stepList->currentRow() == 0) displayStep1Attributes();
 }
 
 // Landmarks
@@ -670,6 +763,153 @@ void MainWindow::scanResultsDirectory()
 //   [img T0] [img T1]
 //   "Sagittal"
 //   [img T0] [img T1]
+
+
+// ===== STEP RESULTS NAVIGATION (NEW) =====
+
+void MainWindow::onStepClicked(int row)
+{
+    // Panneau gauche masque sur l'etape Load (tout est dans la zone large de droite)
+    m_leftPanel->setVisible(row != 0);
+
+    m_grpVolumes->setVisible(false);            // volumes affiches a droite maintenant
+    m_grpLandmarks->setVisible(row == 1);
+    m_grpSliceControls->setVisible(row == 4);
+    m_btnRunPipeline->setVisible(row == 2);
+    m_btnStop->setVisible(row == 2);
+
+    if (row == 0) {
+        displayStep1Attributes();
+    } else if (row == 4) {
+        displayCurrentSlices();
+    } else {
+        QLayoutItem* child;
+        while ((child = m_rightContentLayout->takeAt(0)) != nullptr) {
+            if (child->widget()) delete child->widget();
+            delete child;
+        }
+        auto* lbl = new QLabel("Step results will appear here after Run Pipeline.");
+        lbl->setAlignment(Qt::AlignCenter);
+        lbl->setStyleSheet("color:#999; font-size:13px; padding:40px;");
+        m_rightContentLayout->addWidget(lbl);
+    }
+}
+
+
+void MainWindow::displayStep1Attributes()
+{
+    QLayoutItem* child;
+    while ((child = m_rightContentLayout->takeAt(0)) != nullptr) {
+        if (child->layout()) {
+            QLayoutItem* sub;
+            while ((sub = child->layout()->takeAt(0)) != nullptr) {
+                if (sub->widget()) delete sub->widget();
+                delete sub;
+            }
+        }
+        if (child->widget()) delete child->widget();
+        delete child;
+    }
+
+    m_lblTitle->setText("Step 1 — Load CBCT Volumes");
+
+    // ===== ZONE DE DROP (pleine largeur) =====
+    auto* dropZone = new QWidget;
+    dropZone->setObjectName("dropZone");
+    dropZone->setAttribute(Qt::WA_StyledBackground, true);
+    dropZone->setStyleSheet(
+        "QWidget#dropZone { border:2px dashed #bbb; border-radius:8px; background:#fafafa; }");
+    auto* dz = new QVBoxLayout(dropZone);
+    dz->setContentsMargins(20, 32, 20, 32);
+    dz->setSpacing(10);
+
+    auto* dzIcon = new QLabel("⬆");
+    dzIcon->setAlignment(Qt::AlignCenter);
+    dzIcon->setStyleSheet("font-size:34px; color:#aaa; border:none; background:transparent;");
+    dz->addWidget(dzIcon);
+
+    auto* dzText = new QLabel("Glisser des fichiers CBCT ici, ou");
+    dzText->setAlignment(Qt::AlignCenter);
+    dzText->setStyleSheet("font-size:13px; color:#888; border:none; background:transparent;");
+    dz->addWidget(dzText);
+
+    auto* dzBtnRow = new QHBoxLayout;
+    dzBtnRow->addStretch();
+    auto* btnD = new QPushButton("DICOM");
+    auto* btnN = new QPushButton("NIfTI");
+    btnD->setStyleSheet(GREEN_BTN);
+    btnN->setStyleSheet(GREEN_BTN);
+    btnD->setFixedWidth(130);
+    btnN->setFixedWidth(130);
+    connect(btnD, &QPushButton::clicked, this, &MainWindow::onLoadDICOM);
+    connect(btnN, &QPushButton::clicked, this, &MainWindow::onLoadNIfTI);
+    dzBtnRow->addWidget(btnD);
+    dzBtnRow->addWidget(btnN);
+    dzBtnRow->addStretch();
+    dz->addLayout(dzBtnRow);
+
+    m_rightContentLayout->addWidget(dropZone);
+
+    // ===== TABLEAU : une ligne par volume, 4 parametres =====
+    if (m_volumes.empty()) {
+        auto* hint = new QLabel("No CBCT volumes loaded yet.");
+        hint->setAlignment(Qt::AlignCenter);
+        hint->setStyleSheet("color:#999; font-size:13px; padding:24px;");
+        m_rightContentLayout->addWidget(hint);
+        m_rightContentLayout->addStretch();
+        return;
+    }
+
+    int nVol = static_cast<int>(m_volumes.size());
+    auto* table = new QTableWidget(nVol, 5);
+    table->setHorizontalHeaderLabels(
+        {"Vol", "Shape (voxels)", "Spacing (mm)", "Origin (mm)", "FOV (mm)"});
+    table->verticalHeader()->setVisible(false);
+    table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->setStyleSheet(
+        "QTableWidget { font-size:12px; }"
+        "QHeaderView::section { background:#e0e0e0; font-weight:bold; font-size:11px; padding:5px; }");
+
+    QColor tpColors[] = {QColor(33,150,243,30), QColor(76,175,80,30), QColor(255,152,0,30)};
+
+    for (int i = 0; i < nVol; ++i) {
+        auto sz = m_volumes[i]->getSize();
+        auto sp = m_volumes[i]->getSpacing();
+        auto og = m_volumes[i]->getOrigin();
+
+        QString shapeStr = QString("%1x%2x%3").arg(sz.x()).arg(sz.y()).arg(sz.z());
+        QString spacingStr = QString::number(sp.x(), 'f', 2);
+        QString originStr = QString("%1, %2, %3")
+            .arg(og.x(), 0, 'f', 1).arg(og.y(), 0, 'f', 1).arg(og.z(), 0, 'f', 1);
+        double fovX = sz.x() * sp.x(), fovY = sz.y() * sp.y(), fovZ = sz.z() * sp.z();
+        QString fovStr = QString("%1x%2x%3")
+            .arg(fovX, 0, 'f', 0).arg(fovY, 0, 'f', 0).arg(fovZ, 0, 'f', 0);
+
+        auto* cVol    = new QTableWidgetItem(QString("T%1").arg(i));
+        cVol->setFont(QFont("", -1, QFont::Bold));
+        auto* cShape  = new QTableWidgetItem(shapeStr);
+        auto* cSpace  = new QTableWidgetItem(spacingStr);
+        auto* cOrigin = new QTableWidgetItem(originStr);
+        auto* cFov    = new QTableWidgetItem(fovStr);
+
+        QColor bg = tpColors[i % 3];
+        for (auto* c : {cVol, cShape, cSpace, cOrigin, cFov}) {
+            c->setTextAlignment(Qt::AlignCenter);
+            c->setBackground(bg);
+        }
+
+        table->setItem(i, 0, cVol);
+        table->setItem(i, 1, cShape);
+        table->setItem(i, 2, cSpace);
+        table->setItem(i, 3, cOrigin);
+        table->setItem(i, 4, cFov);
+    }
+
+    table->setMaximumHeight(60 + nVol * 38);
+    m_rightContentLayout->addWidget(table);
+    m_rightContentLayout->addStretch();
+}
 
 void MainWindow::displayCurrentSlices()
 {

@@ -5,6 +5,7 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+
 #include <QMainWindow>
 #include <QListWidget>
 #include <QPushButton>
@@ -49,9 +50,15 @@ private:
     void scanResultsDirectory();
     void displayCurrentSlices();
     void updateLandmarkTable();
+    void onStepClicked(int row);          // NEW: affiche le résultat de l'étape
+    void displayStep1Attributes();        // NEW: tableau des 4 attributs
 
+    QListWidget*   m_stepList;
+    QWidget*       m_leftPanel;        // NEW
     // Left panel
+    QGroupBox*     m_grpVolumes;       // NEW
     QListWidget*   m_volumeList;
+
     QPushButton*   m_btnLoadDICOM;
     QPushButton*   m_btnLoadNIfTI;
     QPushButton*   m_btnRunPipeline;
