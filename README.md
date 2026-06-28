@@ -82,7 +82,7 @@ The processing pipeline executes five sequential stages:
 1. **Git** — install from [git-scm.com](https://git-scm.com/) if needed.
 2. **Build tools** — a C++17 compiler (GCC 9+ or MSVC 2019+) and CMake ≥ 3.16.
 3. **Libraries** — Qt 5.15, ITK 5.2, VTK 9.0, DCMTK 3.6, Eigen 3.4.
-4. *(Optional)* [ALI_CBCT](https://github.com/lucanchling/ALI_CBCT) + 3D Slicer, only if you wish to detect landmarks yourself. If you already have landmark JSON files, ALI_CBCT is not required.
+4. **Landmark detection** — the [ALI_CBCT](https://github.com/lucanchling/ALI_CBCT) Python process is integrated directly into the CBCTAlign interface, so cephalometric landmark coordinates can be detected from within the application. Alternatively, existing landmark JSON files can be imported directly.
 
 ### Steps
 
