@@ -88,7 +88,7 @@ The processing pipeline executes five sequential stages:
 
 **Linux (Ubuntu 20.04+)**
 
-\`\`\`bash
+```bash
 # 1. Clone and install system dependencies
 git clone https://github.com/elmoubarakijamila/CBCTAlign.git
 cd CBCTAlign
@@ -98,22 +98,22 @@ chmod +x install_dependencies.sh
 # 2. Build with CMake
 mkdir build && cd build
 cmake ..
-make -j\$(nproc)
+make -j$(nproc)
 
 # 3. Run
 ./CBCTAlign
-\`\`\`
+```
 
 **Windows 10+**
 
-\`\`\`bash
+```bash
 # Requires Qt 5.15, ITK 5.2, VTK 9.0, DCMTK 3.6, CMake 3.16+ (via vcpkg or manual install)
 git clone https://github.com/elmoubarakijamila/CBCTAlign.git
 cd CBCTAlign
 mkdir build && cd build
 cmake .. -G "Visual Studio 16 2019"
 cmake --build . --config Release
-\`\`\`
+```
 
 ---
 
@@ -156,14 +156,13 @@ CBCTAlign reads two optional environment variables so that no machine-specific p
 
 | Variable | Purpose | Default if unset |
 |----------|---------|------------------|
-| \`CBCTALIGN_DATA_DIR\` | Folder where file dialogs open by default (your CBCT data and results). | \`~/CBCTAlign_data\` |
-| \`ALI_CBCT_HOME\` | Folder containing your ALI_CBCT install (only needed for in-app landmark detection). | \`~/ALI_CBCT_home\` |
+| `CBCTALIGN_DATA_DIR` | Folder where file dialogs open by default (your CBCT data and results). | `~/CBCTAlign_data` |
+| `ALI_CBCT_HOME` | Folder containing your ALI_CBCT install (only needed for in-app landmark detection). | `~/ALI_CBCT_home` |
 
-\`\`\`bash
-echo 'export CBCTALIGN_DATA_DIR="\$HOME/path/to/your/data"' >> ~/.bashrc
-echo 'export ALI_CBCT_HOME="\$HOME/path/to/your/ALI_CBCT"' >> ~/.bashrc
-source ~/.bashrc
-\`\`\`
+```bash
+export CBCTALIGN_DATA_DIR="$HOME/path/to/your/data"
+export ALI_CBCT_HOME="$HOME/path/to/your/ALI_CBCT"
+```
 
 If unset, CBCTAlign still runs — dialogs simply open at the default locations.
 
@@ -187,7 +186,7 @@ results/
 └── ...
 \`\`\`
 
-Aligned volumes are saved in NIfTI format; 2D slices are saved as PNG series with consistent naming (\`T<i>/<Orientation>/slice_<index>.png\`), ready for downstream deep learning pipelines.
+Aligned volumes are saved in NIfTI format; 2D slices are saved as PNG series with consistent naming, ready for downstream deep learning pipelines.
 
 ---
 
@@ -207,6 +206,6 @@ Developed at the **LAROSERI Laboratory**, Department of Computer Science, Facult
 
 ## License
 
-This project is licensed under the **MIT License**. You are free to use, modify, and distribute this software as long as the original license terms are respected. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
 
 For questions, contact **elmoubaraki.jamila@ucd.ac.ma** or open an issue on the [GitHub repository](https://github.com/elmoubarakijamila/CBCTAlign/issues).
