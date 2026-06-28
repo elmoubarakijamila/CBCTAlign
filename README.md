@@ -134,7 +134,7 @@ Import the ALI_CBCT JSON markup files via **File → Load Landmarks JSON**, one 
 ![Step 2 — Landmarks](docs/images/image2.png)
 
 ### Step 3 — Rigid Registration
-Select the reference anchor (default: ANS at T0) and click **Run Registration**. Each moving volume is initialized from the landmark displacement, then refined by maximizing Mattes Mutual Information over a 3-level multi-resolution pyramid (shrink factors 4, 2, 1). The results table reports convergence status, final Mutual Information, and registration time per timepoint.
+Select the reference anchor (default: ANS at T0) and click **Run Registration**. Each moving volume is initialized from the landmark displacement, then refined by maximizing Mattes Mutual Information over a 3-level multi-resolution pyramid. The results table reports convergence status, final Mutual Information, and registration time per timepoint.
 
 ![Step 3 — Registration](docs/images/image3.png)
 
