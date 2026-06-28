@@ -167,24 +167,26 @@ export ALI_CBCT_HOME="$HOME/path/to/your/ALI_CBCT"
 If unset, CBCTAlign still runs — dialogs simply open at the default locations.
 
 ---
-
 ## Output Structure
 
 After extraction, results are written under your chosen output folder using a structured naming scheme:
-
-\`\`\`
 results/
-├── T0_aligned.nii.gz          # aligned volume, timepoint 0
+
+├── T0_aligned.nii.gz
+
 ├── T1_aligned.nii.gz
-├── ...
+
 ├── T0/
-│   ├── Axial/slice_000.png ... slice_NNN.png
-│   ├── Coronal/slice_000.png ...
-│   └── Sagittal/slice_000.png ...
+
+│   ├── Axial/slice_000.png
+
+│   ├── Coronal/slice_000.png
+
+│   └── Sagittal/slice_000.png
+
 ├── T1/
-│   └── ...
+
 └── ...
-\`\`\`
 
 Aligned volumes are saved in NIfTI format; 2D slices are saved as PNG series with consistent naming, ready for downstream deep learning pipelines.
 
