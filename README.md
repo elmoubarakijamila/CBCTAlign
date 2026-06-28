@@ -170,6 +170,7 @@ If unset, CBCTAlign still runs — dialogs simply open at the default locations.
 ## Output Structure
 
 After extraction, results are written under your chosen output folder using a structured naming scheme:
+
 results/
 
 ├── T0_aligned.nii.gz
@@ -187,6 +188,7 @@ results/
 ├── T1/
 
 └── ...
+
 
 Aligned volumes are saved in NIfTI format; 2D slices are saved as PNG series with consistent naming, ready for downstream deep learning pipelines.
 
