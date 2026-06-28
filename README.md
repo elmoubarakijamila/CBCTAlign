@@ -13,7 +13,7 @@ Automated spatio-temporal alignment of longitudinal CBCT scans for maxillofacial
 ---
 
 ## Table of Contents
-
+ 
 - [Software Architecture](#software-architecture)
 - [Key Features](#key-features)
 - [Dependencies](#dependencies)
