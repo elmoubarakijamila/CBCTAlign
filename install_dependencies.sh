@@ -1,14 +1,14 @@
 #!/bin/bash
-# install_dependencies.sh - Installation des dépendances CBCTAlign
+# install_dependencies.sh - Install CBCTAlign dependencies
 # Usage: sudo ./install_dependencies.sh
 
 set -e
 
 echo "=========================================="
-echo "Installation des dépendances CBCTAlign"
+echo "Installing CBCTAlign dependencies"
 echo "=========================================="
 
-# Détecter la distribution
+# Detect the distribution
 if [ -f /etc/os-release ]; then
     . /etc/os-release
     DISTRO=$ID
@@ -16,52 +16,52 @@ else
     DISTRO="unknown"
 fi
 
-echo "Distribution détectée: $DISTRO"
+echo "Detected distribution: $DISTRO"
 
 install_ubuntu() {
-    echo "Installation pour Ubuntu/Debian..."
-    
+    echo "Installing for Ubuntu/Debian..."
+
     apt-get update
-    
-    # Outils de build
+
+    # Build tools
     apt-get install -y \
         build-essential \
         cmake \
         git \
         pkg-config
-    
-    # Qt5 (ou Qt6)
+
+    # Qt5 (or Qt6)
     apt-get install -y \
         qtbase5-dev \
         qttools5-dev \
         libqt5opengl5-dev \
         qt5-qmake
-    
+
     # Eigen3
     apt-get install -y libeigen3-dev
-    
+
     # VTK
     apt-get install -y \
         libvtk9-dev \
         libvtk9-qt-dev \
         vtk9
-    
-    # ITK (peut nécessiter compilation manuelle pour la dernière version)
+
+    # ITK (may require manual compilation for the latest version)
     apt-get install -y libinsighttoolkit5-dev || {
-        echo "ITK non disponible via apt, compilation depuis les sources..."
+        echo "ITK not available via apt, building from source..."
         install_itk_from_source
     }
-    
-    echo "✓ Dépendances Ubuntu installées"
+
+    echo "Ubuntu dependencies installed"
 }
 
 install_itk_from_source() {
-    echo "Compilation d'ITK depuis les sources..."
-    
+    echo "Building ITK from source..."
+
     cd /tmp
     git clone --depth 1 --branch v5.3.0 https://github.com/InsightSoftwareConsortium/ITK.git
     mkdir ITK-build && cd ITK-build
-    
+
     cmake ../ITK \
         -DCMAKE_BUILD_TYPE=Release \
         -DBUILD_SHARED_LIBS=ON \
@@ -69,19 +69,19 @@ install_itk_from_source() {
         -DBUILD_EXAMPLES=OFF \
         -DITK_BUILD_DEFAULT_MODULES=ON \
         -DModule_ITKReview=ON
-    
+
     make -j$(nproc)
     make install
-    
+
     cd /tmp
     rm -rf ITK ITK-build
-    
-    echo "✓ ITK compilé et installé"
+
+    echo "ITK built and installed"
 }
 
 install_arch() {
-    echo "Installation pour Arch Linux..."
-    
+    echo "Installing for Arch Linux..."
+
     pacman -Syu --noconfirm
     pacman -S --noconfirm \
         base-devel \
@@ -91,13 +91,13 @@ install_arch() {
         eigen \
         vtk \
         insight-toolkit
-    
-    echo "✓ Dépendances Arch installées"
+
+    echo "Arch dependencies installed"
 }
 
 install_fedora() {
-    echo "Installation pour Fedora..."
-    
+    echo "Installing for Fedora..."
+
     dnf update -y
     dnf install -y \
         cmake \
@@ -109,11 +109,11 @@ install_fedora() {
         vtk-devel \
         vtk-qt \
         InsightToolkit-devel
-    
-    echo "✓ Dépendances Fedora installées"
+
+    echo "Fedora dependencies installed"
 }
 
-# Installation selon la distribution
+# Install based on the distribution
 case $DISTRO in
     ubuntu|debian|linuxmint)
         install_ubuntu
@@ -125,18 +125,18 @@ case $DISTRO in
         install_fedora
         ;;
     *)
-        echo "Distribution non supportée: $DISTRO"
-        echo "Veuillez installer manuellement: Qt5/6, VTK, ITK, Eigen3"
+        echo "Unsupported distribution: $DISTRO"
+        echo "Please install manually: Qt5/6, VTK, ITK, Eigen3"
         exit 1
         ;;
 esac
 
 echo ""
 echo "=========================================="
-echo "✓ Installation terminée!"
+echo "Installation complete!"
 echo "=========================================="
 echo ""
-echo "Pour compiler CBCTAlign:"
+echo "To build CBCTAlign:"
 echo "  cd CBCTAlign"
 echo "  mkdir build && cd build"
 echo "  cmake .. -DCMAKE_BUILD_TYPE=Release"
