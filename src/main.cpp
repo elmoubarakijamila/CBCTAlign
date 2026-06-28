@@ -1,6 +1,5 @@
 /**
  * @file main.cpp
- * @brief Point d'entrée CBCTAlign
  */
 #include <QApplication>
 #include <QStyleFactory>

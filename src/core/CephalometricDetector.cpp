@@ -1,6 +1,5 @@
 /**
  * @file CephalometricDetector.cpp
- * @brief Détection céphalométrique — segmentation osseuse unique
  */
 #include "CephalometricDetector.h"
 #include "CBCTVolume.h"
@@ -31,11 +30,11 @@ std::vector<Landmark> CephalometricDetector::detectAll(const CBCTVolume& volume)
         return m_landmarks;
     }
 
-    // Segmentation osseuse — UNE SEULE FOIS
+
     emit detectionProgress(10, "Segmentation osseuse...");
     ImagePointer boneMask = segmentBone(volume);
 
-    // Menton (point de départ du réseau anatomique)
+
     emit detectionProgress(25, "Menton...");
     Landmark menton;
     menton.name = "Menton";
@@ -45,7 +44,7 @@ std::vector<Landmark> CephalometricDetector::detectAll(const CBCTVolume& volume)
     menton.confidence = 0.85;
     m_landmarks.push_back(menton);
 
-    // Nasion
+
     emit detectionProgress(40, "Nasion...");
     Landmark nasion;
     nasion.name = "Nasion";
@@ -55,7 +54,7 @@ std::vector<Landmark> CephalometricDetector::detectAll(const CBCTVolume& volume)
     nasion.confidence = 0.90;
     m_landmarks.push_back(nasion);
 
-    // Pogonion
+
     emit detectionProgress(55, "Pogonion...");
     Landmark pogonion;
     pogonion.name = "Pogonion";
@@ -65,7 +64,7 @@ std::vector<Landmark> CephalometricDetector::detectAll(const CBCTVolume& volume)
     pogonion.confidence = 0.82;
     m_landmarks.push_back(pogonion);
 
-    // ENA
+
     emit detectionProgress(70, "ENA...");
     Landmark ena;
     ena.name = "Épine Nasale Antérieure";
@@ -75,7 +74,7 @@ std::vector<Landmark> CephalometricDetector::detectAll(const CBCTVolume& volume)
     ena.confidence = 0.78;
     m_landmarks.push_back(ena);
 
-    // Zygions
+
     emit detectionProgress(85, "Zygions...");
     auto [zyL, zyR] = findZygions(boneMask, volume);
 
@@ -93,7 +92,7 @@ std::vector<Landmark> CephalometricDetector::detectAll(const CBCTVolume& volume)
     zygionR.confidence = 0.88;
     m_landmarks.push_back(zygionR);
 
-    // Corrections manuelles
+
     for (auto& lm : m_landmarks) {
         if (m_manualCorrections.contains(lm.name)) {
             lm.position = m_manualCorrections[lm.name];

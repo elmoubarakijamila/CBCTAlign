@@ -36,7 +36,7 @@ void VolumeViewer3D::setVolume(CBCTVolume* volume) {
 }
 
 void VolumeViewer3D::setLandmarks(const std::vector<Landmark>& landmarks) {
-    // Ajouter des sphères pour chaque landmark
+
     for (const auto& lm : landmarks) {
         auto sphere = vtkSmartPointer<vtkSphereSource>::New();
         sphere->SetCenter(lm.position.x(), lm.position.y(), lm.position.z());
@@ -55,16 +55,16 @@ void VolumeViewer3D::setLandmarks(const std::vector<Landmark>& landmarks) {
 }
 
 void VolumeViewer3D::setSlicePlane(SliceOrientation orientation, double position) {
-    // Afficher le plan de coupe
+
 }
 
 void VolumeViewer3D::setupPipeline() {
-    // Configuration du rendu volumétrique
+
     auto colorFunc = vtkSmartPointer<vtkColorTransferFunction>::New();
-    colorFunc->AddRGBPoint(-1000, 0.0, 0.0, 0.0);  // Air
-    colorFunc->AddRGBPoint(0, 0.5, 0.3, 0.2);      // Tissu mou
-    colorFunc->AddRGBPoint(500, 0.9, 0.8, 0.7);    // Os
-    colorFunc->AddRGBPoint(1500, 1.0, 1.0, 1.0);   // Os dense
+    colorFunc->AddRGBPoint(-1000, 0.0, 0.0, 0.0);
+    colorFunc->AddRGBPoint(0, 0.5, 0.3, 0.2);      
+    colorFunc->AddRGBPoint(500, 0.9, 0.8, 0.7);   
+    colorFunc->AddRGBPoint(1500, 1.0, 1.0, 1.0);  
     
     auto opacityFunc = vtkSmartPointer<vtkPiecewiseFunction>::New();
     opacityFunc->AddPoint(-1000, 0.0);

@@ -1,6 +1,5 @@
 /**
  * @file SliceNormalizer.cpp
- * @brief Implementation de la normalisation des coupes 2D au plus petit FOV.
  */
 #include "SliceNormalizer.h"
 #include "Logger.h"
@@ -14,7 +13,7 @@ SliceNormalizer::SliceNormalizer()
 {
 }
 
-//  detectContentBBox - trouve la bbox du contenu non-noir
+
 SliceNormalizer::BoundingBox
 SliceNormalizer::detectContentBBox(const QImage& image) const
 {
@@ -59,7 +58,7 @@ SliceNormalizer::detectContentBBox(const QImage& image) const
     return bbox;
 }
 
-//  cropImage - applique la bbox a une image (avec marge de securite)
+
 QImage SliceNormalizer::cropImage(const QImage& image,
                                    const BoundingBox& bbox) const
 {
@@ -78,7 +77,7 @@ QImage SliceNormalizer::cropImage(const QImage& image,
     return image.copy(left, top, w, h);
 }
 
-//  detectSmallestFovIndex - trouve l'image au plus petit FOV
+
 int SliceNormalizer::detectSmallestFovIndex(const std::vector<QImage>& images) const
 {
     int smallestIdx = 0;

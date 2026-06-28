@@ -1,25 +1,15 @@
 /**
  * @file PipelineManager.cpp
- * @brief Implementation du pipeline CBCTAlign
- *
- * MODIFICATIONS v2 (Solution B - Dual Mode):
- *   - Sella (S) comme point fixe par defaut (au lieu de Nasion)
- *   - findBestRefLandmark(): fallback intelligent Sella > Nasion > premier disponible
- *   - setManualLandmarks() log Sella en priorite
- *   - detectLandmarks() log la source (Manuel/Auto/ALI_CBCT)
- *   - extractSlices() utilise le point fixe determine par findBestRefLandmark()
- *
- * FIX v3: registerVolumes() utilise la grille T0 comme reference
- *   pour garantir la correspondance spatiale des coupes
  */
 #include "PipelineManager.h"
 #include "Logger.h"
 #include "SliceNormalizer.h"
 #include <QMap>
 #include <QPair>
-
+#include <QElapsedTimer>
 #include <QDir>
 #include <QFileInfo>
+#include <algorithm>
 
 namespace CBCTAlign {
 
@@ -33,7 +23,7 @@ void PipelineManager::setManualLandmarks(const std::vector<Landmark>& landmarks)
     m_manualLandmarks = landmarks;
     m_useManualLandmarks = true;
 
-    // Log le point fixe principal (priorite: Sella > Nasion)
+
     for (const auto& lm : landmarks) {
         if (lm.abbreviation == "S" || lm.name == "Sella") {
             Logger::instance().info(
@@ -44,7 +34,7 @@ void PipelineManager::setManualLandmarks(const std::vector<Landmark>& landmarks)
             return;
         }
     }
-    // Fallback: Nasion
+
     for (const auto& lm : landmarks) {
         if (lm.abbreviation == "N" || lm.name == "Nasion") {
             Logger::instance().info(
@@ -55,7 +45,7 @@ void PipelineManager::setManualLandmarks(const std::vector<Landmark>& landmarks)
             return;
         }
     }
-    // Aucun point fixe connu
+
     if (!landmarks.empty()) {
         Logger::instance().info(
             QString("[MANUAL] Landmarks manuels definis - %1 landmarks, premier: %2")
@@ -69,7 +59,7 @@ void PipelineManager::setManualLandmarksMulti(
 {
     m_allTimepointLandmarks = allTpLm;
     if (!allTpLm.empty()) {
-        m_manualLandmarks = allTpLm[0];  // T0 reste la reference principale
+        m_manualLandmarks = allTpLm[0];  
         m_useManualLandmarks = true;
         Logger::instance().info(QString(
             "[V5] Multi-timepoint landmarks: %1 timepoints").arg(allTpLm.size()));
@@ -87,8 +77,7 @@ void PipelineManager::setLoadedVolumes(const std::vector<std::shared_ptr<CBCTVol
     Logger::instance().info(QString("Pipeline: %1 volumes pre-charges").arg(m_volumes.size()));
 }
 
-// NOUVEAU: Trouve le meilleur point fixe parmi les landmarks T0
-// Priorite: demande > Sella > Nasion > premier disponible
+
 QString PipelineManager::findBestRefLandmark(const QString& requested) const
 {
     if (m_landmarks.empty() || m_landmarks[0].empty())
@@ -96,7 +85,7 @@ QString PipelineManager::findBestRefLandmark(const QString& requested) const
 
     const auto& lmsT0 = m_landmarks[0];
 
-    // 1. Chercher le landmark demandé
+
     for (const auto& lm : lmsT0) {
         if (lm.name.contains(requested, Qt::CaseInsensitive) ||
             lm.abbreviation.contains(requested, Qt::CaseInsensitive)) {
@@ -104,7 +93,7 @@ QString PipelineManager::findBestRefLandmark(const QString& requested) const
         }
     }
 
-    // 2. Fallback: ANS (présent dans vos données)
+
     for (const auto& lm : lmsT0) {
         if (lm.name == "ANS") {
             Logger::instance().info("Utilisation de ANS comme point fixe (fallback)");
@@ -112,14 +101,14 @@ QString PipelineManager::findBestRefLandmark(const QString& requested) const
         }
     }
 
-    // 3. Fallback: Sella
+
     for (const auto& lm : lmsT0) {
         if (lm.name == "Sella" || lm.abbreviation == "S") {
             return "Sella";
         }
     }
 
-    // 4. Fallback: Nasion
+
     for (const auto& lm : lmsT0) {
         if (lm.name == "Nasion" || lm.abbreviation == "N") {
             return "Nasion";
@@ -134,7 +123,7 @@ QString PipelineManager::getEffectiveRefLandmark() const
     if (m_landmarks.empty() || m_landmarks[0].empty())
         return "Sella";
 
-    // Chercher Sella d'abord
+
     for (const auto& lm : m_landmarks[0]) {
         if (lm.name == "Sella" || lm.abbreviation == "S")
             return "Sella";
@@ -146,7 +135,7 @@ QString PipelineManager::getEffectiveRefLandmark() const
     return m_landmarks[0][0].name;
 }
 
-// PIPELINE PRINCIPAL
+
 
 void PipelineManager::runFullPipeline(const QStringList& cbctPaths,
                                        const QString& outputDir,
@@ -161,7 +150,7 @@ void PipelineManager::runFullPipeline(const QStringList& cbctPaths,
     Logger::instance().info(QString("Point fixe demande: %1").arg(refLandmark));
     QDir().mkpath(outputDir);
 
-    // ETAPE 1: CHARGEMENT
+
     emit stageStarted(PipelineStage::Loading);
     if (!m_volumesPreloaded && !loadVolumes(cbctPaths)) {
         emit stageCompleted(PipelineStage::Loading, false);
@@ -171,7 +160,7 @@ void PipelineManager::runFullPipeline(const QStringList& cbctPaths,
     emit stageCompleted(PipelineStage::Loading, true);
     if (m_cancelled) { emit pipelineFinished(false); return; }
 
-    // ETAPE 2: PRETRAITEMENT
+
     emit stageStarted(PipelineStage::Preprocessing);
     if (!preprocessVolumes()) {
         emit stageCompleted(PipelineStage::Preprocessing, false);
@@ -181,7 +170,7 @@ void PipelineManager::runFullPipeline(const QStringList& cbctPaths,
     emit stageCompleted(PipelineStage::Preprocessing, true);
     if (m_cancelled) { emit pipelineFinished(false); return; }
 
-    // ETAPE 3: REGISTRATION
+
     emit stageStarted(PipelineStage::Registration);
     if (!registerVolumes()) {
         emit stageCompleted(PipelineStage::Registration, false);
@@ -191,7 +180,7 @@ void PipelineManager::runFullPipeline(const QStringList& cbctPaths,
     emit stageCompleted(PipelineStage::Registration, true);
     if (m_cancelled) { emit pipelineFinished(false); return; }
 
-    // ETAPE 4: DETECTION LANDMARKS
+
     emit stageStarted(PipelineStage::LandmarkDetection);
     if (!detectLandmarks()) {
         emit stageCompleted(PipelineStage::LandmarkDetection, false);
@@ -201,11 +190,11 @@ void PipelineManager::runFullPipeline(const QStringList& cbctPaths,
     emit stageCompleted(PipelineStage::LandmarkDetection, true);
     if (m_cancelled) { emit pipelineFinished(false); return; }
 
-    // Determiner le point fixe effectif
+
     QString effectiveRef = findBestRefLandmark(refLandmark);
     Logger::instance().info(QString("Point fixe effectif: %1").arg(effectiveRef));
 
-    // ETAPE 5: EXTRACTION COUPES
+
     emit stageStarted(PipelineStage::SliceExtraction);
     if (!extractSlices(effectiveRef, slicesPerOrientation, sliceRangeMm)) {
         emit stageCompleted(PipelineStage::SliceExtraction, false);
@@ -214,7 +203,7 @@ void PipelineManager::runFullPipeline(const QStringList& cbctPaths,
     }
     emit stageCompleted(PipelineStage::SliceExtraction, true);
 
-    // ETAPE 6: VALIDATION MCAGPC
+
     emit stageStarted(PipelineStage::Validation);
     validateSlices();
     saveResults(outputDir);
@@ -274,11 +263,6 @@ bool PipelineManager::preprocessVolumes()
     return true;
 }
 
-//
-// AVANT (BUG):
-//   applyTransform(*m_volumes[i], result.transform)
-//
-//   applyTransform(*m_volumes[i], *m_volumes[0], result.transform)
 
 bool PipelineManager::registerVolumes()
 {
@@ -289,7 +273,7 @@ bool PipelineManager::registerVolumes()
 
     Logger::instance().info(QString("Registration: reference = %1").arg(m_volumes[0]->getName()));
 
-    // Log grille de référence T0
+
     auto refOrigin = m_volumes[0]->getOrigin();
     auto refSpacing = m_volumes[0]->getSpacing();
     auto refSize = m_volumes[0]->getSize();
@@ -300,25 +284,24 @@ bool PipelineManager::registerVolumes()
 
     m_alignedVolumes.clear();
     m_alignedVolumes.push_back(m_volumes[0]);
-    m_registrationResults.clear();  // V7: reset before new registration
+    m_registrationResults.clear();  
 
     for (size_t i = 1; i < m_volumes.size(); ++i) {
         emit progressUpdated(static_cast<int>(i * 100 / m_volumes.size()),
                              QString("Registration T%1 -> T0...").arg(i));
 
-        // Log grille Ti avant alignement
+
         auto tiOrigin = m_volumes[i]->getOrigin();
         auto tiSize = m_volumes[i]->getSize();
         Logger::instance().info(QString("  Grille T%1: %2x%3x%4, origin=[%5,%6,%7]")
             .arg(i).arg(tiSize.x()).arg(tiSize.y()).arg(tiSize.z())
             .arg(tiOrigin.x(), 0, 'f', 2).arg(tiOrigin.y(), 0, 'f', 2).arg(tiOrigin.z(), 0, 'f', 2));
 
-        // V6: Si on a des landmarks par timepoint, init par translation ANS
+
         if (!m_allTimepointLandmarks.empty() &&
             i < m_allTimepointLandmarks.size() &&
             !m_allTimepointLandmarks[0].empty() &&
             !m_allTimepointLandmarks[i].empty()) {
-            // Trouver ANS dans T0 et Ti
             Eigen::Vector3d ans_T0 = m_allTimepointLandmarks[0][0].position;
             Eigen::Vector3d ans_Ti = m_allTimepointLandmarks[i][0].position;
             Eigen::Vector3d initTrans = ans_Ti - ans_T0;
@@ -341,8 +324,8 @@ bool PipelineManager::registerVolumes()
         auto result = m_registration.align(*m_volumes[0], *m_volumes[i]);
 
         if (result.converged) {
-            m_registrationResults.push_back(result);  // V7: store for landmark transform
-            // T1_aligned sera sur la même grille que T0
+            m_registrationResults.push_back(result); 
+
             auto aligned = m_registration.applyTransform(
                 *m_volumes[i], *m_volumes[0], result.transform);
 
@@ -352,7 +335,7 @@ bool PipelineManager::registerVolumes()
             Logger::instance().info(QString("T%1 aligne sur grille T0: MI=%2, iter=%3")
                 .arg(i).arg(result.finalMetric, 0, 'f', 4).arg(result.iterations));
 
-            // Vérification: T1_aligned doit avoir même origin/size que T0
+
             auto alignedOrigin = aligned->getOrigin();
             auto alignedSize = aligned->getSize();
             Logger::instance().info(QString("  T%1_aligned: %2x%3x%4, origin=[%5,%6,%7] (doit = T0)")
@@ -384,7 +367,7 @@ bool PipelineManager::detectLandmarks()
                 .arg(lm.position.z(), 0, 'f', 2)
                 .arg(lm.confidence, 0, 'f', 2));
         }
-        // V5: Si on a des landmarks par timepoint, on les utilise
+
         if (!m_allTimepointLandmarks.empty() &&
             m_allTimepointLandmarks.size() == m_alignedVolumes.size()) {
             m_landmarks = m_allTimepointLandmarks;
@@ -392,7 +375,7 @@ bool PipelineManager::detectLandmarks()
                 QString("[V5] Using per-timepoint landmarks (%1 sets)")
                     .arg(m_allTimepointLandmarks.size()));
         } else {
-            // Fallback: meme landmarks pour tous (V3 behavior)
+
             for (size_t i = 0; i < m_alignedVolumes.size(); ++i) {
                 m_landmarks.push_back(m_manualLandmarks);
             }
@@ -400,7 +383,7 @@ bool PipelineManager::detectLandmarks()
         return true;
     }
 
-    // Detection automatique (CephalometricDetector interne)
+
     for (size_t i = 0; i < m_alignedVolumes.size(); ++i) {
         emit progressUpdated(static_cast<int>(i * 100 / m_alignedVolumes.size()),
                              QString("Landmarks %1...").arg(m_alignedVolumes[i]->getName()));
@@ -419,7 +402,7 @@ bool PipelineManager::detectLandmarks()
         }
     }
 
-    // Ecarts entre T0 et chaque Ti
+
     if (m_landmarks.size() >= 2) {
         Logger::instance().info("=== Ecarts landmarks post-registration ===");
         size_t n = std::min(m_landmarks[0].size(), m_landmarks[1].size());
@@ -435,8 +418,6 @@ bool PipelineManager::detectLandmarks()
     return !m_landmarks.empty();
 }
 
-// EXTRACTION COUPES - Utilise le point fixe T0 pour TOUS les volumes
-// MODIFIE v2: Supporte Sella comme point fixe par defaut
 
 bool PipelineManager::extractSlices(const QString& refLandmark,
                                      int numSlices,
@@ -452,7 +433,7 @@ bool PipelineManager::extractSlices(const QString& refLandmark,
         return false;
     }
 
-    // Trouver le landmark de reference dans T0
+
     Landmark refLmT0;
     bool found = false;
     for (const auto& lm : m_landmarks[0]) {
@@ -494,14 +475,14 @@ bool PipelineManager::extractSlices(const QString& refLandmark,
             .arg(sz.x()).arg(sz.y()).arg(sz.z()));
     }
 
-    // Vérifier que le range ne sort pas du volume
+
     auto refOrg = m_alignedVolumes[0]->getOrigin();
     auto refSz = m_alignedVolumes[0]->getSize();
     auto refSp = m_alignedVolumes[0]->getSpacing();
     Eigen::Vector3d refMax = refOrg + Eigen::Vector3d(
         (refSz.x()-1) * refSp.x(), (refSz.y()-1) * refSp.y(), (refSz.z()-1) * refSp.z());
 
-    // Vérifier chaque axe
+
     double sellaCoords[3] = {refLmT0.position.x(), refLmT0.position.y(), refLmT0.position.z()};
     double orgCoords[3] = {refOrg.x(), refOrg.y(), refOrg.z()};
     double maxCoords[3] = {refMax.x(), refMax.y(), refMax.z()};
@@ -521,15 +502,15 @@ bool PipelineManager::extractSlices(const QString& refLandmark,
 
     m_planeCalc.setReferenceLandmark(refLmT0);
 
-    // Solution: clamper le range aux limites du volume pour chaque axe
+
     double sellaXYZ[3] = {refLmT0.position.x(), refLmT0.position.y(), refLmT0.position.z()};
     double dMinPerAxis[3], dMaxPerAxis[3], stepPerAxis[3];
     
     for (int a = 0; a < 3; ++a) {
         double lo = std::max(sellaXYZ[a] - rangeMm, orgCoords[a]);
         double hi = std::min(sellaXYZ[a] + rangeMm, maxCoords[a]);
-        dMinPerAxis[a] = lo - sellaXYZ[a];  // négatif
-        dMaxPerAxis[a] = hi - sellaXYZ[a];  // positif
+        dMinPerAxis[a] = lo - sellaXYZ[a];
+        dMaxPerAxis[a] = hi - sellaXYZ[a]; 
         stepPerAxis[a] = (numSlices > 1) ? (dMaxPerAxis[a] - dMinPerAxis[a]) / (numSlices - 1) : 0.0;
     }
 
@@ -590,36 +571,39 @@ bool PipelineManager::extractSlices(const QString& refLandmark,
     return !m_slices.empty();
 }
 
+
+
 bool PipelineManager::validateSlices()
 {
     if (m_alignedVolumes.size() < 2 || m_slices.empty()) return false;
 
     Logger::instance().info("=== Validation MCAGPC ===");
 
-    // Trouver le point fixe T0 et T1 pour delta_P
+
     Eigen::Vector3d refT0 = Eigen::Vector3d::Zero();
     Eigen::Vector3d refT1 = Eigen::Vector3d::Zero();
     QString refName = "?";
 
     if (m_landmarks.size() >= 2) {
-        // Chercher Sella d'abord
+
         for (const auto& lm : m_landmarks[0]) {
-            if (lm.abbreviation == "S" || lm.name == "Sella") {
-                refT0 = lm.position; refName = "Sella"; break;
-            }
-        }
-        if (refName == "?") {
-            for (const auto& lm : m_landmarks[0]) {
-                if (lm.abbreviation == "N" || lm.name == "Nasion") {
-                    refT0 = lm.position; refName = "Nasion"; break;
-                }
+            if (lm.abbreviation == "AN" || lm.name == "ANS") {
+                refT0 = lm.position; refName = "ANS"; break;
             }
         }
         for (const auto& lm : m_landmarks[1]) {
-            if (lm.name == refName || lm.abbreviation == (refName == "Sella" ? "S" : "N")) {
+            if (lm.abbreviation == "AN" || lm.name == "ANS") {
                 refT1 = lm.position; break;
             }
         }
+    }
+
+
+    if (m_lastAlignedDeltaP >= 0.0) {
+
+        refT1 = refT0 + Eigen::Vector3d(m_lastAlignedDeltaP, 0.0, 0.0);
+        Logger::instance().info(QString("  [MCAGPC] Utilise dANS aligned = %1mm")
+            .arg(m_lastAlignedDeltaP, 0, 'f', 2));
     }
 
     int slicesPerVol = static_cast<int>(m_slices.size() / m_alignedVolumes.size());
@@ -653,7 +637,7 @@ bool PipelineManager::saveResults(const QString& outputDir)
 {
     Logger::instance().info("=== Sauvegarde ===");
 
-    // 1. Sauvegarde des volumes alignes
+
     for (size_t i = 0; i < m_alignedVolumes.size(); ++i) {
         QString path = QDir(outputDir).filePath(QString("T%1_aligned.nii.gz").arg(i));
         if (m_alignedVolumes[i]->saveToNIfTI(path))
@@ -665,7 +649,7 @@ bool PipelineManager::saveResults(const QString& outputDir)
     int slicesPerOrient = slicesPerVol / 3;
     int numTimepoints = static_cast<int>(m_alignedVolumes.size());
 
-    // NORMALISATION : crop tous les triplets au plus petit FOV
+
     SliceNormalizer normalizer;
     normalizer.setBlackThreshold(8);
     normalizer.setSafetyMargin(2);
@@ -675,7 +659,7 @@ bool PipelineManager::saveResults(const QString& outputDir)
         QString("[NORMALIZE] Normalisation au plus petit FOV : %1")
             .arg(normalizationEnabled ? "ACTIVEE" : "DESACTIVEE"));
 
-    // Map : (orient, sliceIdx) -> bbox commune pour ce triplet
+
     QMap<QPair<int,int>, SliceNormalizer::BoundingBox> commonBBoxes;
 
     if (normalizationEnabled && numTimepoints >= 2) {
@@ -705,7 +689,7 @@ bool PipelineManager::saveResults(const QString& outputDir)
         }
     }
 
-    // 2. Sauvegarde des coupes 2D (avec normalisation si activee)
+
     for (size_t vi = 0; vi < m_alignedVolumes.size(); ++vi) {
         for (int o = 0; o < 3; ++o) {
             QString subDir = QDir(outputDir).filePath(
@@ -733,7 +717,7 @@ bool PipelineManager::saveResults(const QString& outputDir)
         }
     }
 
-    // 3. V7: Metriques landmarks - utilise les landmarks transformes par registration
+
     if (m_landmarks.size() >= 2 && !m_registrationResults.empty()) {
         Logger::instance().info("=== V7: Metriques landmark POST-registration (point fixe T0) ===");
         for (size_t i = 1; i < m_landmarks.size() && (i-1) < m_registrationResults.size(); ++i) {
@@ -750,6 +734,7 @@ bool PipelineManager::saveResults(const QString& outputDir)
 
                 double distRaw = (ans_T0 - ans_Ti).norm();
                 double distAligned = (ans_T0 - ans_Ti_aligned).norm();
+                if (j == 0) m_lastAlignedDeltaP = distAligned;  
 
                 Logger::instance().info(QString("  %1: dT0-T%2 raw=%3mm  aligned=%4mm %5")
                     .arg(m_landmarks[0][j].name)
@@ -774,4 +759,166 @@ bool PipelineManager::saveResults(const QString& outputDir)
     return true;
 }
 
+
+bool PipelineManager::runRegistrationOnly(const QString& /*refLandmark*/,
+                                          double deltaThresholdMm)
+{
+    m_cancelled = false;
+    m_deltaThresholdMm = deltaThresholdMm;
+    m_registrationReports.clear();
+
+    Logger::instance().info("========== REGISTRATION ONLY ==========");
+
+    if (m_volumes.size() < 2) {
+        Logger::instance().error("Au moins 2 volumes requis pour le recalage");
+        return false;
+    }
+    if (m_allTimepointLandmarks.empty()) {
+        Logger::instance().error("Aucun landmark charge (faire l'etape 2 d'abord)");
+        return false;
+    }
+
+
+    emit stageStarted(PipelineStage::Preprocessing);
+    if (!preprocessVolumes()) {
+        emit stageCompleted(PipelineStage::Preprocessing, false);
+        return false;
+    }
+    emit stageCompleted(PipelineStage::Preprocessing, true);
+    if (m_cancelled) return false;
+
+
+    emit stageStarted(PipelineStage::Registration);
+    QElapsedTimer timer;
+
+    m_alignedVolumes.clear();
+    m_alignedVolumes.push_back(m_volumes[0]);
+    m_registrationResults.clear();
+
+    for (size_t i = 1; i < m_volumes.size(); ++i) {
+        emit progressUpdated(static_cast<int>(i * 100 / m_volumes.size()),
+                             QString("Registration T%1 -> T0...").arg(i));
+
+
+        Eigen::Vector3d ans_T0 = m_allTimepointLandmarks[0][0].position;
+        Eigen::Vector3d ans_Ti = (i < m_allTimepointLandmarks.size() &&
+                                  !m_allTimepointLandmarks[i].empty())
+                                 ? m_allTimepointLandmarks[i][0].position
+                                 : ans_T0;
+        Eigen::Vector3d initTrans = ans_Ti - ans_T0;
+
+        auto params = m_registration.getParameters();
+        params.initMethod = RigidRegistration::InitMethod::Landmark;
+        params.initialTranslation = initTrans;
+        m_registration.setParameters(params);
+
+        timer.restart();
+        auto result = m_registration.align(*m_volumes[0], *m_volumes[i]);
+        qint64 ms = timer.elapsed();
+
+        RegistrationReport rep;
+        rep.timepoint = static_cast<int>(i);
+        rep.converged = result.converged;
+        rep.finalMetric = result.finalMetric;
+        rep.iterations = result.iterations;
+        rep.elapsedMs = ms;
+        rep.deltaLandmarkRaw = initTrans.norm();   
+
+        if (result.converged) {
+            m_registrationResults.push_back(result);
+            auto aligned = m_registration.applyTransform(
+                *m_volumes[i], *m_volumes[0], result.transform);
+            aligned->setName(QString("T%1_aligned").arg(i));
+            m_alignedVolumes.push_back(aligned);
+
+
+            Eigen::Vector4d p4(ans_Ti.x(), ans_Ti.y(), ans_Ti.z(), 1.0);
+            Eigen::Vector4d p4a = result.transform.inverse() * p4;
+            Eigen::Vector3d ans_Ti_aligned(p4a[0], p4a[1], p4a[2]);
+            rep.deltaLandmark = (ans_T0 - ans_Ti_aligned).norm();
+
+            Logger::instance().info(
+                QString("  T%1: dANS raw=%2mm aligned=%3mm MI=%4 %5")
+                    .arg(i)
+                    .arg(rep.deltaLandmarkRaw, 0, 'f', 2)
+                    .arg(rep.deltaLandmark, 0, 'f', 2)
+                    .arg(rep.finalMetric, 0, 'f', 4)
+                    .arg(rep.deltaLandmark < deltaThresholdMm ? "OK" : "WARN"));
+        } else {
+            rep.deltaLandmark = -1.0;  
+            Logger::instance().error(QString("Echec registration T%1").arg(i));
+        }
+
+        m_registrationReports.push_back(rep);
+        if (m_cancelled) { emit stageCompleted(PipelineStage::Registration, false); return false; }
+    }
+
+    emit stageCompleted(PipelineStage::Registration, true);
+    Logger::instance().info("========== REGISTRATION ONLY TERMINE ==========");
+    emit pipelineFinished(true);
+    return true;
+}
+
+
+PipelineManager::ExtractionReport
+PipelineManager::runExtractionOnly(const QString& outputDir,
+                                   const QString& refLandmark,
+                                   int slicesPerOrientation,
+                                   double sliceRangeMm)
+{
+    ExtractionReport rep;
+    rep.outputDir = outputDir;
+    rep.refLandmark = refLandmark;
+
+    Logger::instance().info("========== EXTRACTION ONLY ==========");
+
+
+    if (m_alignedVolumes.size() < 2) {
+        Logger::instance().error("Aucun volume recale. Lancer Registration d'abord.");
+        return rep;
+    }
+
+    if (m_landmarks.empty()) {
+
+        if (!m_allTimepointLandmarks.empty()) {
+            m_landmarks = m_allTimepointLandmarks;
+        } else {
+            Logger::instance().error("Aucun landmark. Faire l'etape 2 (detection) d'abord.");
+            return rep;
+        }
+    }
+
+    m_outputDir = outputDir;
+    QDir().mkpath(outputDir);
+
+
+    QString effectiveRef = findBestRefLandmark(refLandmark);
+    Logger::instance().info(QString("Ancre effective: %1").arg(effectiveRef));
+
+
+    emit stageStarted(PipelineStage::SliceExtraction);
+    if (!extractSlices(effectiveRef, slicesPerOrientation, sliceRangeMm)) {
+        emit stageCompleted(PipelineStage::SliceExtraction, false);
+        return rep;
+    }
+    emit stageCompleted(PipelineStage::SliceExtraction, true);
+
+
+    saveResults(outputDir);
+
+
+    rep.timepoints = static_cast<int>(m_alignedVolumes.size());
+    rep.totalSlices = static_cast<int>(m_slices.size());
+    rep.slicesPerOrientation = slicesPerOrientation;
+    rep.ok = !m_slices.empty();
+
+    Logger::instance().info(QString("Extraction terminee: %1 coupes (%2 TP x 3 x %3)")
+        .arg(rep.totalSlices).arg(rep.timepoints).arg(slicesPerOrientation));
+
+
+    validateSlices();
+
+    Logger::instance().info("========== EXTRACTION ONLY TERMINE ==========");
+    return rep;
+}
 } // namespace CBCTAlign

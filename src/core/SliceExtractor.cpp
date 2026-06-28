@@ -1,6 +1,5 @@
 /**
  * @file SliceExtractor.cpp
- * @brief Extraction basée sur POSITION PHYSIQUE
  */
 #include "SliceExtractor.h"
 #include "Logger.h"
@@ -37,7 +36,7 @@ Slice2D SliceExtractor::extractSliceAtPhysicalPosition(
     auto spacing = volume.getSpacing();
     auto origin = volume.getOrigin();
 
-    // Calculer l'index à partir de la position physique
+
     int sliceIndex;
     double physCoord;
 
@@ -73,7 +72,7 @@ Slice2D SliceExtractor::extractSliceAtPhysicalPosition(
             break;
     }
 
-    // Extraire les pixels
+
     slice.data.resize(slice.width * slice.height);
 
     for (int h = 0; h < slice.height; ++h) {
@@ -107,7 +106,7 @@ Slice2D SliceExtractor::extractSlice(const CBCTVolume& volume, const SlicePlane&
         return Slice2D();
     }
 
-    // Position physique = point de ref + distance × normale
+
     Eigen::Vector3d planeOrigin = plane.referencePoint + plane.distance * plane.normal;
     return extractSliceAtPhysicalPosition(volume, planeOrigin, plane.normal, plane.orientation);
 }

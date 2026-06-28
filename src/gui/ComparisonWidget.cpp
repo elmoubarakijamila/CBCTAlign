@@ -1,6 +1,5 @@
 /**
- * @file ComparisonWidget_IMPROVED.cpp
- * @brief Implémentation du widget de comparaison multi-temps
+ * @file ComparisonWidget.cpp
  */
 
 #include "ComparisonWidget.h"
@@ -13,18 +12,18 @@ namespace CBCTAlign {
 ComparisonWidget::ComparisonWidget(QWidget* parent)
     : QWidget(parent)
     , m_syncZoom(true)
-    , m_numColumns(3)  // 3 coupes par ligne par défaut
+    , m_numColumns(3) 
 {
     auto* mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(5, 5, 5, 5);
     
-    // Titre
+
     auto* titleLabel = new QLabel("Comparaison Multi-Temps");
     titleLabel->setStyleSheet("font-size: 12pt; font-weight: bold; padding: 5px;");
     titleLabel->setAlignment(Qt::AlignCenter);
     mainLayout->addWidget(titleLabel);
     
-    // Scroll area pour la grille
+
     m_scrollArea = new QScrollArea;
     m_scrollArea->setWidgetResizable(true);
     m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
@@ -44,7 +43,7 @@ void ComparisonWidget::setSlices(const std::vector<Slice2D>& slices, SliceOrient
     clearViewers();
     
     if (slices.empty()) {
-        auto* emptyLabel = new QLabel("Aucune coupe à afficher.\nExécutez le pipeline puis cliquez sur 'Mettre à jour les coupes'.");
+        auto* emptyLabel = new QLabel("No slices to display.\nRun the pipeline, then click 'Refresh slices'.");
         emptyLabel->setAlignment(Qt::AlignCenter);
         emptyLabel->setStyleSheet("color: gray; font-style: italic; padding: 50px;");
         m_gridLayout->addWidget(emptyLabel, 0, 0);
@@ -56,24 +55,26 @@ void ComparisonWidget::setSlices(const std::vector<Slice2D>& slices, SliceOrient
     QString orientStr = SlicePlaneCalculator::orientationToString(orientation);
     
     int row = 0;
-    int col = 0;
+    int col = 1;  
+    m_gridLayout->setColumnStretch(0, 1);
+    m_gridLayout->setColumnStretch(m_numColumns + 1, 1);
     
     for (size_t i = 0; i < slices.size(); ++i) {
         const auto& slice = slices[i];
         
-        // Créer un groupe pour chaque coupe
+
         auto* groupBox = new QGroupBox;
         auto* groupLayout = new QVBoxLayout(groupBox);
         groupLayout->setSpacing(5);
         groupLayout->setContentsMargins(5, 5, 5, 5);
         
-        // Label titre
+
         auto* titleLabel = new QLabel(QString("<b>%1</b>").arg(slice.timepoint));
         titleLabel->setAlignment(Qt::AlignCenter);
         titleLabel->setStyleSheet("font-size: 11pt; color: #2196F3;");
         groupLayout->addWidget(titleLabel);
         
-        // Viewer de la coupe
+
         auto* viewer = new SliceViewer2D;
         viewer->setSlice(slice);
         viewer->setMinimumSize(250, 250);
@@ -82,7 +83,7 @@ void ComparisonWidget::setSlices(const std::vector<Slice2D>& slices, SliceOrient
         
         m_viewers.push_back(viewer);
         
-        // Label info
+
         auto* infoLabel = new QLabel(QString("%1\n%2 × %3 pixels\nSpacing: %4 mm")
             .arg(orientStr)
             .arg(slice.width)
@@ -92,10 +93,10 @@ void ComparisonWidget::setSlices(const std::vector<Slice2D>& slices, SliceOrient
         infoLabel->setStyleSheet("font-size: 9pt; color: #666;");
         groupLayout->addWidget(infoLabel);
         
-        // Ajouter dans la grille
+
         m_gridLayout->addWidget(groupBox, row, col);
         
-        // Passer à la colonne suivante
+
         col++;
         if (col >= m_numColumns) {
             col = 0;
@@ -103,7 +104,7 @@ void ComparisonWidget::setSlices(const std::vector<Slice2D>& slices, SliceOrient
         }
     }
     
-    // Ajuster la taille du container
+
     m_container->adjustSize();
 }
 
@@ -111,7 +112,7 @@ void ComparisonWidget::setSynchronizedZoom(bool enabled)
 {
     m_syncZoom = enabled;
     
-    // Connecter les signaux de zoom de tous les viewers
+
 }
 
 void ComparisonWidget::clear()
@@ -121,7 +122,7 @@ void ComparisonWidget::clear()
 
 void ComparisonWidget::clearViewers()
 {
-    // Supprimer tous les widgets de la grille
+
     QLayoutItem* item;
     while ((item = m_gridLayout->takeAt(0)) != nullptr) {
         if (item->widget()) {
@@ -136,7 +137,7 @@ void ComparisonWidget::clearViewers()
 
 void ComparisonWidget::setupGrid(int numSlices)
 {
-    // Déterminer le nombre optimal de colonnes
+
     if (numSlices <= 2) {
         m_numColumns = 2;
     } else if (numSlices <= 6) {

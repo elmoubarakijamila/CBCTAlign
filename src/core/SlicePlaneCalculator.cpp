@@ -1,6 +1,5 @@
 /**
  * @file SlicePlaneCalculator.cpp
- * @brief Implémentation du calculateur de plans de coupe
  */
 
 #include "SlicePlaneCalculator.h"

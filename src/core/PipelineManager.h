@@ -25,26 +25,57 @@ class PipelineManager : public QObject
     Q_OBJECT
 
 public:
+
+    struct RegistrationReport {
+        int    timepoint = 0;          
+        double deltaLandmarkRaw = 0.0; 
+        double deltaLandmark = -1.0;  
+        double finalMetric = 0.0;     
+        int    iterations = 0;
+        bool   converged = false;
+        qint64 elapsedMs = 0;          
+    };
+
+    struct ExtractionReport {
+        int    timepoints = 0;
+        int    slicesPerOrientation = 0;
+        int    totalSlices = 0;
+        QString refLandmark;
+        QString outputDir;
+        bool   ok = false;
+    };
     explicit PipelineManager(QObject* parent = nullptr);
 
     void setLoadedVolumes(const std::vector<std::shared_ptr<CBCTVolume>>& volumes);
 
     void runFullPipeline(const QStringList& cbctPaths,
                          const QString& outputDir,
-                         const QString& refLandmark = "Sella",  // MODIFIE: Sella par defaut
+                         const QString& refLandmark = "Sella",  
                          double sliceDistance = 0.0,
                          int slicesPerOrientation = 50,
                          double sliceRangeMm = 25.0);
 
     void cancel();
 
-    /// Definir des landmarks manuels (bypass la detection auto)
+
     void setManualLandmarks(const std::vector<Landmark>& landmarks);
-    /// V5: Set landmarks per timepoint (one vector per volume)
+
     void setManualLandmarksMulti(const std::vector<std::vector<Landmark>>& allTpLm);
+
+
+    bool runRegistrationOnly(const QString& refLandmark = "ANS",
+                             double deltaThresholdMm = 2.0);
+
+    ExtractionReport runExtractionOnly(const QString& outputDir,
+                                       const QString& refLandmark = "ANS",
+                                       int slicesPerOrientation = 50,
+                                       double sliceRangeMm = 25.0);
+
+
+    std::vector<RegistrationReport> getRegistrationReports() const { return m_registrationReports; }
     bool hasManualLandmarks() const { return m_useManualLandmarks; }
 
-    /// Retourne le nom du point fixe effectivement utilise
+
     QString getEffectiveRefLandmark() const;
 
     std::vector<std::shared_ptr<CBCTVolume>> getAlignedVolumes() const { return m_alignedVolumes; }
@@ -66,8 +97,7 @@ private:
     bool validateSlices();
     bool saveResults(const QString& outputDir);
 
-    /// Trouve le meilleur point fixe parmi les landmarks disponibles
-    /// Priorite: refLandmark demande > Sella > Nasion > premier disponible
+
     QString findBestRefLandmark(const QString& requested) const;
 
     std::vector<std::shared_ptr<CBCTVolume>> m_volumes;
@@ -78,17 +108,22 @@ private:
     bool m_volumesPreloaded = false;
     bool m_cancelled = false;
 
-    // Landmarks manuels
+
     bool m_useManualLandmarks = false;
     std::vector<Landmark> m_manualLandmarks;
-    std::vector<std::vector<Landmark>> m_allTimepointLandmarks;  // V5
-    std::vector<RegistrationResult> m_registrationResults;  // V7: store transforms  // V5: per-timepoint landmarks
+    std::vector<std::vector<Landmark>> m_allTimepointLandmarks;  
+    std::vector<RegistrationResult> m_registrationResults;      
+
+
+    std::vector<RegistrationReport> m_registrationReports;
+    double m_deltaThresholdMm = 2.0;
 
     RigidRegistration m_registration;
     CephalometricDetector m_detector;
     SlicePlaneCalculator m_planeCalc;
     SliceExtractor m_extractor;
     ValidationMetrics m_validator;
+    double m_lastAlignedDeltaP = -1.0;  
 
     QString m_outputDir;
 };

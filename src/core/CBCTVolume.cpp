@@ -1,6 +1,5 @@
 /**
  * @file CBCTVolume.cpp
- * @brief Implémentation de la classe CBCTVolume
  */
 #include "CBCTVolume.h"
 #include "Logger.h"

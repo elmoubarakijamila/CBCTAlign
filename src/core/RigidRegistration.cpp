@@ -1,15 +1,12 @@
 /**
  * @file RigidRegistration.cpp
- * @brief Rigid 3D registration implementation
- *
- * VERSION 4 - See header for full changelog
  */
 
 #include "RigidRegistration.h"
 #include "CBCTVolume.h"
 #include "Logger.h"
 
-// ITK core
+
 #include <itkImageRegistrationMethodv4.h>
 #include <itkMattesMutualInformationImageToImageMetricv4.h>
 #include <itkRegularStepGradientDescentOptimizerv4.h>
@@ -18,7 +15,7 @@
 #include <itkLinearInterpolateImageFunction.h>
 #include <itkRegistrationParameterScalesFromPhysicalShift.h>
 
-// [V4] ITK masking
+
 #include <itkImageMaskSpatialObject.h>
 #include <itkOtsuThresholdImageFilter.h>
 #include <itkBinaryThresholdImageFilter.h>
@@ -27,22 +24,16 @@
 #include <itkBinaryBallStructuringElement.h>
 #include <itkImageRegionConstIterator.h>
 
-// [V4] ITK transform I/O
+
 #include <itkTransformFileWriter.h>
 
 namespace CBCTAlign {
 
-// Types used for masking
+
 using MaskPixelType       = unsigned char;
 using MaskImageType       = itk::Image<MaskPixelType, 3>;
 using MaskSpatialObjectType = itk::ImageMaskSpatialObject<3>;
 
-// -----------------------------------------------------------------------------
-// Build a binary mask separating patient tissue from surrounding air.
-// - Otsu thresholding when params.maskAirThreshold <= 0
-// - Hard threshold when params.maskAirThreshold > 0 (HU-aware)
-// - Hole filling + small erosion to avoid boundary noise
-// -----------------------------------------------------------------------------
 static MaskImageType::Pointer buildAirExclusionMask(
     ImageType::Pointer fixedImage,
     float hardThreshold,
@@ -53,7 +44,7 @@ static MaskImageType::Pointer buildAirExclusionMask(
     MaskImageType::Pointer mask;
 
     if (hardThreshold > 0.0f) {
-        // ---- Hard threshold path (HU-aware) --------------------------------
+
         using BinThreshType = itk::BinaryThresholdImageFilter<ImageType, MaskImageType>;
         auto bin = BinThreshType::New();
         bin->SetInput(fixedImage);
@@ -65,18 +56,18 @@ static MaskImageType::Pointer buildAirExclusionMask(
         mask = bin->GetOutput();
         thresholdUsed = hardThreshold;
     } else {
-        // ---- Otsu path (data-driven) ---------------------------------------
+
         using OtsuType = itk::OtsuThresholdImageFilter<ImageType, MaskImageType>;
         auto otsu = OtsuType::New();
         otsu->SetInput(fixedImage);
-        otsu->SetInsideValue(0);    // air -> 0
-        otsu->SetOutsideValue(1);   // tissue -> 1
+        otsu->SetInsideValue(0);    
+        otsu->SetOutsideValue(1);  
         otsu->Update();
         mask = otsu->GetOutput();
         thresholdUsed = static_cast<float>(otsu->GetThreshold());
     }
 
-    // ---- Fill internal holes (air pockets inside sinuses, etc.) ------------
+
     using FillholeType = itk::BinaryFillholeImageFilter<MaskImageType>;
     auto fill = FillholeType::New();
     fill->SetInput(mask);
@@ -84,10 +75,10 @@ static MaskImageType::Pointer buildAirExclusionMask(
     fill->Update();
     mask = fill->GetOutput();
 
-    // ---- Light erosion to avoid boundary voxels corrupting MI -------------
+
     using StructElementType = itk::BinaryBallStructuringElement<MaskPixelType, 3>;
     StructElementType ball;
-    ball.SetRadius(1);  // 1 voxel = 1mm at 1mm spacing
+    ball.SetRadius(1); 
     ball.CreateStructuringElement();
 
     using ErodeType = itk::BinaryErodeImageFilter<MaskImageType, MaskImageType, StructElementType>;
@@ -98,7 +89,7 @@ static MaskImageType::Pointer buildAirExclusionMask(
     erode->Update();
     mask = erode->GetOutput();
 
-    // ---- Stats for logging -------------------------------------------------
+
     voxelsInMask = 0;
     totalVoxels  = 0;
     itk::ImageRegionConstIterator<MaskImageType> it(
@@ -111,13 +102,13 @@ static MaskImageType::Pointer buildAirExclusionMask(
     return mask;
 }
 
-// Constructor
+
 RigidRegistration::RigidRegistration(QObject* parent)
     : QObject(parent), m_cancelled(false)
 {
 }
 
-// [V4] Parameters validation
+
 bool RigidRegistration::validateParameters(QString& errorMsg) const
 {
     if (m_params.shrinkFactors.empty()) {
@@ -147,7 +138,7 @@ bool RigidRegistration::validateParameters(QString& errorMsg) const
     return true;
 }
 
-// Main align() function
+
 RegistrationResult RigidRegistration::align(
     const CBCTVolume& fixed, const CBCTVolume& moving)
 {
@@ -157,7 +148,7 @@ RegistrationResult RigidRegistration::align(
 
     Logger::instance().info("=== Rigid Registration v4 ===");
 
-    // [V4] Prologue checks -----------------------------------------------------
+
     QString paramErr;
     if (!validateParameters(paramErr)) {
         result.errorMessage = paramErr;
@@ -174,7 +165,7 @@ RegistrationResult RigidRegistration::align(
         ImagePointer fixedImage = fixed.getITKImage();
         ImagePointer movingImage = moving.getITKImage();
 
-        // Log dimensions
+
         auto fs = fixedImage->GetLargestPossibleRegion().GetSize();
         auto fsp = fixedImage->GetSpacing();
         auto ms = movingImage->GetLargestPossibleRegion().GetSize();
@@ -184,9 +175,7 @@ RegistrationResult RigidRegistration::align(
         Logger::instance().info(QString("  Moving: %1x%2x%3, spacing=%4mm")
             .arg(ms[0]).arg(ms[1]).arg(ms[2]).arg(msp[0], 0, 'f', 3));
 
-        // ----------------------------------------------------------------
-        // Transform + initializer
-        // ----------------------------------------------------------------
+
         auto transform = TransformType::New();
 
         using InitializerType = itk::CenteredTransformInitializer<
@@ -196,13 +185,13 @@ RegistrationResult RigidRegistration::align(
         initializer->SetFixedImage(fixedImage);
         initializer->SetMovingImage(movingImage);
 
-        // [V6] Configurable init method (Moments / Geometry / Landmark)
+
         if (m_params.initMethod == InitMethod::Landmark) {
-            // V6: Direct translation from landmark vector (ANS_fixed - ANS_moving)
-            // The transform center stays at the fixed image center for stability
+
+
             initializer->GeometryOn();
-            initializer->InitializeTransform();  // sets center
-            // Override translation with landmark-based vector
+            initializer->InitializeTransform();  
+
             TransformType::OutputVectorType lmTrans;
             lmTrans[0] = m_params.initialTranslation.x();
             lmTrans[1] = m_params.initialTranslation.y();
@@ -228,15 +217,13 @@ RegistrationResult RigidRegistration::align(
         Logger::instance().info(QString("  Initial translation: [%1, %2, %3] mm")
             .arg(t0[0], 0, 'f', 3).arg(t0[1], 0, 'f', 3).arg(t0[2], 0, 'f', 3));
 
-        // ----------------------------------------------------------------
-        // Metric (Mattes MI)
-        // ----------------------------------------------------------------
+
         using MetricType = itk::MattesMutualInformationImageToImageMetricv4<
             ImageType, ImageType>;
         auto metric = MetricType::New();
         metric->SetNumberOfHistogramBins(m_params.numberOfHistogramBins);
 
-        // [V4] Otsu mask -------------------------------------------------
+
         MaskSpatialObjectType::Pointer maskSO;  // keep alive in scope
         if (m_params.useFixedImageMask) {
             Logger::instance().info("Building air exclusion mask on fixed image...");
@@ -260,9 +247,7 @@ RegistrationResult RigidRegistration::align(
             Logger::instance().info("Fixed image mask: DISABLED");
         }
 
-        // ----------------------------------------------------------------
-        // Optimizer (Regular Step Gradient Descent)
-        // ----------------------------------------------------------------
+
         using OptimizerType = itk::RegularStepGradientDescentOptimizerv4<double>;
         auto optimizer = OptimizerType::New();
         optimizer->SetLearningRate(m_params.maxStepLength);
@@ -280,9 +265,7 @@ RegistrationResult RigidRegistration::align(
         scalesEstimator->SetTransformForward(true);
         optimizer->SetScalesEstimator(scalesEstimator);
 
-        // ----------------------------------------------------------------
-        // Registration method (multi-resolution)
-        // ----------------------------------------------------------------
+
         using RegistrationType = itk::ImageRegistrationMethodv4<
             ImageType, ImageType, TransformType>;
         auto registration = RegistrationType::New();
@@ -313,21 +296,17 @@ RegistrationResult RigidRegistration::align(
         registration->SetMetricSamplingStrategy(RegistrationType::RANDOM);
         registration->SetMetricSamplingPercentage(m_params.samplingPercentage);
 
-        // ----------------------------------------------------------------
-        // Observers (iteration + level)
-        // ----------------------------------------------------------------
+
         auto observer = RegistrationObserver::New();
         observer->SetRegistration(this);
         observer->SetOptimizer(optimizer);
         optimizer->AddObserver(itk::IterationEvent(), observer);
 
-        // [V4] Also observe level changes on the registration method
+
         registration->AddObserver(
             itk::MultiResolutionIterationEvent(), observer);
 
-        // ----------------------------------------------------------------
-        // Log params summary
-        // ----------------------------------------------------------------
+
         Logger::instance().info(QString(
             "Params: bins=%1, sampling=%2%%, maxIter=%3, step=[%4,%5]")
             .arg(m_params.numberOfHistogramBins)
@@ -345,7 +324,7 @@ RegistrationResult RigidRegistration::align(
         }
         Logger::instance().info(QString("Multi-resolution: %1").arg(levels));
 
-        // [V4] Compute initial metric value (before optimization)
+
         double initialMI = 0.0;
         try {
             metric->SetFixedImage(fixedImage);
@@ -387,8 +366,7 @@ RegistrationResult RigidRegistration::align(
         result.converged = true;
 
         // ----------------------------------------------------------------
-        // [V4] Save .tfm file if requested
-        // ----------------------------------------------------------------
+
         if (m_params.saveTransformTfm &&
             !m_params.transformOutputPath.isEmpty())
         {
@@ -406,9 +384,7 @@ RegistrationResult RigidRegistration::align(
             }
         }
 
-        // ----------------------------------------------------------------
-        // Final logs
-        // ----------------------------------------------------------------
+
         Logger::instance().info("=== Registration DONE ===");
         Logger::instance().info(QString("  MI initial = %1")
             .arg(result.initialMetric, 0, 'f', 6));
@@ -439,7 +415,7 @@ RegistrationResult RigidRegistration::align(
     return result;
 }
 
-// applyTransform - v3 API (uses moving grid as reference)
+
 std::shared_ptr<CBCTVolume> RigidRegistration::applyTransform(
     const CBCTVolume& vol, const Eigen::Matrix4d& transform)
 {
@@ -474,7 +450,7 @@ std::shared_ptr<CBCTVolume> RigidRegistration::applyTransform(
     return result;
 }
 
-// applyTransform - v3 overload with fixed reference grid (critical!)
+
 std::shared_ptr<CBCTVolume> RigidRegistration::applyTransform(
     const CBCTVolume& moving,
     const CBCTVolume& referenceVolume,
@@ -523,7 +499,7 @@ std::shared_ptr<CBCTVolume> RigidRegistration::applyTransform(
     return result;
 }
 
-// Eigen <-> ITK conversions
+
 Eigen::Matrix4d RigidRegistration::transformToMatrix(
     TransformPointer transform) const
 {
@@ -556,7 +532,7 @@ RigidRegistration::TransformPointer RigidRegistration::matrixToTransform(
     return transform;
 }
 
-// Observer - handles both IterationEvent and MultiResolutionIterationEvent
+
 void RigidRegistration::RegistrationObserver::Execute(
     itk::Object* caller, const itk::EventObject& event)
 {
@@ -566,7 +542,7 @@ void RigidRegistration::RegistrationObserver::Execute(
 void RigidRegistration::RegistrationObserver::Execute(
     const itk::Object* caller, const itk::EventObject& event)
 {
-    // [V4] Handle level transitions (from Registration method)
+
     if (itk::MultiResolutionIterationEvent().CheckEvent(&event)) {
         ++m_level;
         m_iteration = 0;  // reset iter counter per level
@@ -578,7 +554,7 @@ void RigidRegistration::RegistrationObserver::Execute(
         return;
     }
 
-    // Handle optimizer iteration events
+
     if (!itk::IterationEvent().CheckEvent(&event)) return;
     if (!m_optimizer) return;
 

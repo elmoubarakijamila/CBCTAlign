@@ -53,4 +53,4 @@ private:
 
 } // namespace CBCTAlign
 
-#endif // LOGGER_H
+#endif 

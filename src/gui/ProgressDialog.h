@@ -29,4 +29,4 @@ private:
 
 } // namespace CBCTAlign
 
-#endif // PROGRESSDIALOG_H
+#endif 

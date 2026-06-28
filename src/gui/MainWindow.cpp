@@ -1,21 +1,11 @@
 /**
  * @file MainWindow.cpp
- * @brief CBCTAlign — Multi-orientation visualization
- *
- * Right panel layout (NO grid, using VBox + HBox):
- *
- *   [        T0         T1       ]   ← header row
- *   --- Axial ---                    ← orientation label
- *   [   [img]       [img]       ]   ← images side by side
- *   --- Coronal ---
- *   [   [img]       [img]       ]
- *   --- Sagittal ---
- *   [   [img]       [img]       ]
  */
 #include "MainWindow.h"
 #include "../core/LandmarkIO.h"
 #include "../utils/Logger.h"
-
+#include <QFrame>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QSplitter>
@@ -29,33 +19,39 @@
 #include <QGroupBox>
 #include <QHeaderView>
 #include <QScrollArea>
+#include <QProcess>
+#include <memory>
 #include <QPixmap>
 #include <QImage>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QListView>
 #include <QTreeView>
+#include <QApplication>
+#include <QDialog>
+#include <QToolButton>
+#include <QKeyEvent>
 
-// Default paths for CBCTAlign file dialogs (LAROSERI data convention)
-// Adjust BASE_DATA_DIR if data lives elsewhere on another machine.
+
+
 namespace {
-    const QString BASE_DATA_DIR        = QDir::homePath() + "/Desktop/PHD/artcile2026/artcileSoftwarX/dataCBCT";
+
+    const QString BASE_DATA_DIR = qEnvironmentVariable(
+        "CBCTALIGN_DATA_DIR", QDir::homePath() + "/CBCTAlign_data");
     const QString DEFAULT_DICOM_DIR    = BASE_DATA_DIR + "/MOULID_HICHAM/CBCT";
     const QString DEFAULT_NIFTI_DIR    = BASE_DATA_DIR + "/MOULID_HICHAM/nifti";
-    const QString DEFAULT_LANDMARK_DIR = BASE_DATA_DIR + "/MOULID_HICHAM/nifti";   // .mrk.json live here
+    const QString DEFAULT_LANDMARK_DIR = BASE_DATA_DIR + "/MOULID_HICHAM/nifti";   
     const QString DEFAULT_CSV_DIR      = BASE_DATA_DIR + "/MOULID_HICHAM";
     const QString DEFAULT_OUTPUT_DIR   = BASE_DATA_DIR + "/results";
 
-    // Returns the last directory used (via QSettings) or the default at first launch.
-    // Falls back to default if the saved path no longer exists.
     inline QString lastDirOrDefault(const QString& key, const QString& defaultDir) {
         QSettings settings("LAROSERI", "CBCTAlign");
         QString d = settings.value(key, defaultDir).toString();
         return QDir(d).exists() ? d : defaultDir;
     }
 
-    // Stores the parent directory of the given path for next time.
-    // Accepts either a file path (uses parent dir) or a directory path (uses it directly).
+
+
     inline void rememberDir(const QString& key, const QString& path) {
         if (path.isEmpty()) return;
         QSettings settings("LAROSERI", "CBCTAlign");
@@ -84,7 +80,7 @@ MainWindow::MainWindow(QWidget* parent)
     setWindowTitle("CBCTAlign — Spatio-Temporal CBCT Alignment");
     resize(1400, 900);
 
-    // Ensure default output directory exists (created on first run)
+
     QDir().mkpath(DEFAULT_OUTPUT_DIR);
 
     setupUI();
@@ -101,10 +97,10 @@ void MainWindow::setupUI()
     mainLayout->setContentsMargins(2, 2, 2, 2);
     auto* splitter = new QSplitter(Qt::Horizontal);
 
-    // ===== WORKFLOW STEPS COLUMN (NEW) =====
+
     m_stepList = new QListWidget;
-    m_stepList->setMaximumWidth(170);
-    m_stepList->setMinimumWidth(150);
+    m_stepList->setMaximumWidth(240);
+    m_stepList->setMinimumWidth(220);
     m_stepList->addItem("1 · Load CBCT");
     m_stepList->addItem("2 · Landmarks");
     m_stepList->addItem("3 · Registration");
@@ -112,10 +108,10 @@ void MainWindow::setupUI()
     m_stepList->addItem("5 · Validation");
     m_stepList->setCurrentRow(0);
     m_stepList->setStyleSheet(
-        "QListWidget { font-size:13px; border:1px solid #ccc; "
+        "QListWidget { font-size:17px; border:1px solid #ccc; "
         "border-radius:4px; background:#fafafa; }"
-        "QListWidget::item { padding:10px 8px; border-bottom:1px solid #eee; }"
-        "QListWidget::item:selected { background:#2196F3; color:white; }");
+        "QListWidget::item { padding:16px 12px; border-bottom:1px solid #eee; }"
+        "QListWidget::item:selected { background:#4CAF50; color:white; }");
     splitter->addWidget(m_stepList);
 
     m_leftPanel = new QWidget;
@@ -123,10 +119,6 @@ void MainWindow::setupUI()
     leftLayout->setSpacing(4);
     leftLayout->setContentsMargins(4, 4, 4, 4);
 
-    // --- CBCT Volumes ---
-   /* auto* grpVol = new QGroupBox("CBCT Volumes");
-    auto* volLayout = new QVBoxLayout(grpVol);*/
-// --- CBCT Volumes ---
     m_grpVolumes = new QGroupBox("1 · Load CBCT Volumes");
     auto* volLayout = new QVBoxLayout(m_grpVolumes);
     volLayout->setSpacing(3);
@@ -146,26 +138,22 @@ void MainWindow::setupUI()
 
     leftLayout->addWidget(m_grpVolumes);
 
-    // Run Pipeline / Stop : hors du groupe volumes, pour gestion separee
-    m_btnRunPipeline = new QPushButton("▶ Run Pipeline");
-    m_btnRunPipeline->setStyleSheet(GREEN_BTN);
-    m_btnRunPipeline->setEnabled(false);
-    leftLayout->addWidget(m_btnRunPipeline);
 
-    m_btnStop = new QPushButton("Stop");
-    m_btnStop->setEnabled(false);
-    leftLayout->addWidget(m_btnStop);
+    
 
-    // --- Cephalometric Landmarks ---
+
     m_grpLandmarks = new QGroupBox("Cephalometric Landmarks");
     auto* lmLayout = new QVBoxLayout(m_grpLandmarks);
     lmLayout->setSpacing(3);
 
     auto* lmBtnRow = new QHBoxLayout;
+    m_btnDetect = new QPushButton("🔍 Detect (ALI_CBCT)");
     m_btnLoadJSON = new QPushButton("Load JSON");
     m_btnLoadCSV = new QPushButton("Load CSV");
+    m_btnDetect->setStyleSheet(GREEN_BTN_SM);
     m_btnLoadJSON->setStyleSheet(GREEN_BTN_SM);
     m_btnLoadCSV->setStyleSheet(GREEN_BTN_SM);
+    lmBtnRow->addWidget(m_btnDetect);
     lmBtnRow->addWidget(m_btnLoadJSON);
     lmBtnRow->addWidget(m_btnLoadCSV);
     lmLayout->addLayout(lmBtnRow);
@@ -182,6 +170,7 @@ void MainWindow::setupUI()
         "QTableWidget { font-size:11px; }"
         "QHeaderView::section { background:#e0e0e0; font-weight:bold; font-size:10px; }");
     lmLayout->addWidget(m_tableLandmarks);
+    m_tableLandmarks->setVisible(false);   // table affichee dans la zone de droite (etape Landmarks)
 
     m_lblLandmarkStatus = new QLabel("No landmarks loaded");
     m_lblLandmarkStatus->setAlignment(Qt::AlignCenter);
@@ -189,7 +178,7 @@ void MainWindow::setupUI()
     lmLayout->addWidget(m_lblLandmarkStatus);
     leftLayout->addWidget(m_grpLandmarks);
 
-    // --- Slice Navigation ---
+
     m_grpSliceControls = new QGroupBox("Slice Navigation");
     m_grpSliceControls->setEnabled(false);
     auto* sliceLayout = new QVBoxLayout(m_grpSliceControls);
@@ -213,7 +202,7 @@ void MainWindow::setupUI()
     m_lblSliceInfo = new QLabel("Slice 26/50 — d = 0.0 mm");
     m_lblSliceInfo->setAlignment(Qt::AlignCenter);
     m_lblSliceInfo->setStyleSheet(
-        "font-weight:bold; color:#2196F3; font-size:12px; "
+        "font-weight:bold; color:#4CAF50; font-size:12px; "
         "padding:3px; background:#f0f8ff; border-radius:3px;");
     sliceLayout->addWidget(m_lblSliceInfo);
 
@@ -222,10 +211,7 @@ void MainWindow::setupUI()
     sliceLayout->addWidget(m_btnLoadSlices);
     leftLayout->addWidget(m_grpSliceControls);
 
-    // --- MCAGPC Metrics: COMMENTED OUT (hidden) ---
-    // m_grpMetrics = new QGroupBox("MCAGPC Metrics");
-    // ... table creation commented out ...
-    // leftLayout->addWidget(m_grpMetrics);
+
 
     leftLayout->addStretch();
     splitter->addWidget(m_leftPanel);
@@ -242,8 +228,8 @@ void MainWindow::setupUI()
 
     m_scrollArea = new QScrollArea;
     m_scrollArea->setWidgetResizable(true);
+    m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);  // scroll H si besoin
     m_scrollArea->setStyleSheet("QScrollArea { border:none; background:#f8f8f8; }");
-
     m_scrollContent = new QWidget;
     m_rightContentLayout = new QVBoxLayout(m_scrollContent);
     m_rightContentLayout->setSpacing(0);
@@ -253,20 +239,18 @@ void MainWindow::setupUI()
     rightLayout->addWidget(m_scrollArea);
 
     splitter->addWidget(rightPanel);
-    splitter->setStretchFactor(0, 0);  // colonne etapes : largeur fixe
-    splitter->setStretchFactor(1, 2);  // panneau gauche
-    splitter->setStretchFactor(2, 6);  // zone images
+    splitter->setStretchFactor(0, 0);  
+    splitter->setStretchFactor(1, 2);  
+    splitter->setStretchFactor(2, 6);  
 
     mainLayout->addWidget(splitter);
     statusBar()->showMessage("Ready — Load 2+ CBCT volumes to start");
 
-    // Etat initial : etape 1 (Load CBCT) — panneau gauche masque, tout a droite
+
     m_leftPanel->setVisible(false);
     m_grpVolumes->setVisible(false);
     m_grpLandmarks->setVisible(false);
     m_grpSliceControls->setVisible(false);
-    m_btnRunPipeline->setVisible(false);
-    m_btnStop->setVisible(false);
     displayStep1Attributes();
 }
 
@@ -274,11 +258,10 @@ void MainWindow::connectSignals()
 {
     connect(m_btnLoadDICOM,  &QPushButton::clicked, this, &MainWindow::onLoadDICOM);
     connect(m_btnLoadNIfTI,  &QPushButton::clicked, this, &MainWindow::onLoadNIfTI);
-    connect(m_btnRunPipeline,&QPushButton::clicked, this, &MainWindow::onRunPipeline);
-    connect(m_btnStop, &QPushButton::clicked, [this]() { if (m_pipeline) m_pipeline->cancel(); });
     connect(m_btnLoadSlices, &QPushButton::clicked, this, &MainWindow::onLoadSlicesFromDisk);
     connect(m_btnLoadJSON,   &QPushButton::clicked, this, &MainWindow::onLoadLandmarksJSON);
     connect(m_btnLoadCSV,    &QPushButton::clicked, this, &MainWindow::onLoadLandmarksCSV);
+    connect(m_btnDetect,     &QPushButton::clicked, this, &MainWindow::onDetectLandmarks);
     connect(m_sliderSliceNum, &QSlider::valueChanged, this, &MainWindow::onSliceNumChanged);
     connect(m_spinSliceNum, QOverload<int>::of(&QSpinBox::valueChanged),
             m_sliderSliceNum, &QSlider::setValue);
@@ -288,17 +271,18 @@ void MainWindow::connectSignals()
 
 void MainWindow::createMenuBar()
 {
-    // ===== FILE =====
+
     auto* mFile = menuBar()->addMenu("&File");
     mFile->addAction("Open DICOM...", this, &MainWindow::onLoadDICOM);
     mFile->addAction("Open NIfTI...", this, &MainWindow::onLoadNIfTI);
+    mFile->addAction("Load Results Folder...", this, &MainWindow::onLoadSlicesFromDisk);  // ← AJOUT
     mFile->addSeparator();
     mFile->addAction("Load Landmarks JSON...", this, &MainWindow::onLoadLandmarksJSON);
     mFile->addAction("Load Landmarks CSV...", this, &MainWindow::onLoadLandmarksCSV);
     mFile->addSeparator();
     mFile->addAction("Quit", this, &QMainWindow::close);
 
-    // ===== LANDMARKS =====
+
     auto* mLandmarks = menuBar()->addMenu("&Landmarks");
     mLandmarks->addAction("Detect (ALI_CBCT)...", [this]() {
         QMessageBox::information(this, "Landmark Detection",
@@ -311,7 +295,7 @@ void MainWindow::createMenuBar()
             "(Integration in progress)");
     });
 
-    // ===== REGISTRATION =====
+
     auto* mReg = menuBar()->addMenu("&Registration");
     mReg->addAction("Run Pipeline", this, &MainWindow::onRunPipeline);
     mReg->addSeparator();
@@ -321,7 +305,7 @@ void MainWindow::createMenuBar()
             "(Integration in progress)");
     });
 
-    // ===== VIEW =====
+
     auto* mView = menuBar()->addMenu("&View");
     mView->addAction("Comparison Grid (3xN)", [this]() {
         QMessageBox::information(this, "View",
@@ -338,7 +322,7 @@ void MainWindow::createMenuBar()
             "(Integration in progress)");
     });
 
-    // ===== EXPORT =====
+
     auto* mExport = menuBar()->addMenu("&Export");
     mExport->addAction("Export Aligned Volumes (NIfTI)...", [this]() {
         QMessageBox::information(this, "Export",
@@ -353,7 +337,7 @@ void MainWindow::createMenuBar()
             "Export MCAGPC validation metrics as CSV.\n(Integration in progress)");
     });
 
-    // ===== HELP =====
+
     auto* mHelp = menuBar()->addMenu("&Help");
     mHelp->addAction("About", [this]() {
         QMessageBox::about(this, "CBCTAlign",
@@ -364,20 +348,18 @@ void MainWindow::createMenuBar()
     });
 }
 
-// Volume Loading
+
 
 void MainWindow::onLoadDICOM()
 {
-    // Selection multi-dossiers DICOM (Ctrl+clic / Shift+clic)
-    // QFileDialog::getExistingDirectory ne supporte pas la selection multiple,
-    // donc on cree un dialog manuel avec ListView.selectionMode = ExtendedSelection
+
     QFileDialog dialog(this, "Select DICOM Folders (1 per timepoint, Ctrl/Shift+click for multi)");
     dialog.setFileMode(QFileDialog::Directory);
     dialog.setOption(QFileDialog::ShowDirsOnly, true);
-    dialog.setOption(QFileDialog::DontUseNativeDialog, true);  // necessaire pour selection multiple
+    dialog.setOption(QFileDialog::DontUseNativeDialog, true); 
     dialog.setDirectory(lastDirOrDefault("lastDicomDir", DEFAULT_DICOM_DIR));
 
-    // Activer la selection multiple sur les vues internes
+
     QListView* listView = dialog.findChild<QListView*>("listView");
     if (listView) listView->setSelectionMode(QAbstractItemView::ExtendedSelection);
     QTreeView* treeView = dialog.findChild<QTreeView*>();
@@ -390,16 +372,14 @@ void MainWindow::onLoadDICOM()
 
     rememberDir("lastDicomDir", dirs.first());
 
-    // Tri alphabetique pour ordre temporel T0, T1, T2...
+
     dirs.sort();
 
     int loaded = 0;
     int failed = 0;
 
     for (const QString& dir : dirs) {
-        // QFileDialog en mode Directory + selection multiple peut renvoyer
-        // le parent au lieu du dossier selectionne dans certains cas.
-        // On verifie que c'est bien un dossier valide.
+
         if (!QDir(dir).exists()) {
             failed++;
             continue;
@@ -422,7 +402,7 @@ void MainWindow::onLoadDICOM()
         }
     }
 
-    m_btnRunPipeline->setEnabled(m_volumes.size() >= 2);
+
 
     if (failed > 0) {
         QMessageBox::warning(this, "Partial Load",
@@ -436,7 +416,7 @@ void MainWindow::onLoadDICOM()
 }
 void MainWindow::onLoadNIfTI()
 {
-    // Selection multiple : Ctrl+clic ou Shift+clic pour selectionner plusieurs fichiers
+
     QStringList paths = QFileDialog::getOpenFileNames(
         this, "Select NIfTI files (select 1 file per timepoint, in T0..Tn order)",
         lastDirOrDefault("lastNiftiDir", DEFAULT_NIFTI_DIR),
@@ -445,7 +425,7 @@ void MainWindow::onLoadNIfTI()
     if (paths.isEmpty()) return;
     rememberDir("lastNiftiDir", paths.first());
 
-    // Tri alphabetique : MOULID_T0, MOULID_T1, MOULID_T2 -> ordre temporel
+
     paths.sort();
 
     int loaded = 0;
@@ -455,6 +435,7 @@ void MainWindow::onLoadNIfTI()
         auto vol = std::make_shared<CBCTVolume>();
         if (vol->loadFromNIfTI(path)) {
             m_volumes.push_back(vol);
+            m_volumePaths.push_back(path);   
             m_volumeList->addItem(
                 QString("T%1: %2").arg(m_volumes.size()-1)
                                   .arg(QFileInfo(path).fileName()));
@@ -469,7 +450,7 @@ void MainWindow::onLoadNIfTI()
         }
     }
 
-    m_btnRunPipeline->setEnabled(m_volumes.size() >= 2);
+
 
     if (failed > 0) {
         QMessageBox::warning(this, "Partial Load",
@@ -482,11 +463,10 @@ void MainWindow::onLoadNIfTI()
     if (m_stepList->currentRow() == 0) displayStep1Attributes();
 }
 
-// Landmarks
 
 void MainWindow::onLoadLandmarksJSON()
 {
-    // V4: Charge PLUSIEURS .mrk.json (un par timepoint, ordre alphabetique = T0..Tn)
+
     QStringList fps = QFileDialog::getOpenFileNames(
         this,
         "Load Landmarks JSON (select 1 file per timepoint, in T0..Tn order)",
@@ -495,8 +475,7 @@ void MainWindow::onLoadLandmarksJSON()
 
     if (fps.isEmpty()) return;
     rememberDir("lastLandmarkDir", fps.first());
-    fps.sort();  // T0, T1, T2, T3 dans l'ordre alphabetique
-
+    fps.sort();  
     m_allTimepointLandmarks.clear();
     m_manualLandmarks.clear();
     int totalLm = 0;
@@ -521,10 +500,9 @@ void MainWindow::onLoadLandmarksJSON()
             .arg(lms.size()).arg(fi.fileName()).arg(tpName));
     }
 
-    // Pour la GUI : afficher T0
-    // Pour la GUI : afficher TOUS les timepoints dans le tableau
+
     if (!m_allTimepointLandmarks.empty()) {
-        m_manualLandmarks = m_allTimepointLandmarks[0];  // T0 reste la reference
+        m_manualLandmarks = m_allTimepointLandmarks[0];  
     }
     m_useManualLandmarks = !m_manualLandmarks.empty();
     updateLandmarkTable();
@@ -566,6 +544,111 @@ void MainWindow::onLoadLandmarksCSV()
     statusBar()->showMessage(QString("%1 landmarks loaded").arg(m_manualLandmarks.size()), 5000);
 }
 
+void MainWindow::onDetectLandmarks()
+{
+
+    QString niftiPath = QFileDialog::getOpenFileName(
+        this, "Select NIfTI volume for landmark detection",
+        lastDirOrDefault("lastNiftiDir", DEFAULT_NIFTI_DIR),
+        "NIfTI (*.nii *.nii.gz)");
+    if (niftiPath.isEmpty()) return;
+    rememberDir("lastNiftiDir", niftiPath);
+
+
+    const QString aliBase   = qEnvironmentVariable(
+        "ALI_CBCT_HOME", QDir::homePath() + "/ALI_CBCT_home");
+    const QString pySlicer  = aliBase + "/Slicer-5.6.2-linux-amd64/bin/PythonSlicer";
+    const QString aliScript = aliBase + "/SlicerAutomatedDentalTools/ALI_CBCT/ALI_CBCT.py";
+    const QString models    = aliBase + "/ALI_CBCT_models/Upper_Bones_v2";
+    const QString outDir    = "/tmp/ali_out";
+    const QString tempDir   = "/tmp/ali_temp";
+
+
+    if (!QFileInfo::exists(pySlicer) || !QFileInfo::exists(aliScript)) {
+        QMessageBox::critical(this, "ALI_CBCT not found",
+            "PythonSlicer or ALI_CBCT.py not found.\nCheck paths in onDetectLandmarks().");
+        return;
+    }
+    QDir().mkpath(outDir);
+    QDir().mkpath(tempDir);
+
+
+    QStringList args;
+    args << aliScript
+         << niftiPath
+         << models
+         << "\"ANS\""            
+         << outDir
+         << tempDir
+         << "false"
+         << "[1,0.3]"
+         << "[1,1]"
+         << "[64,64,64]"
+         << "10";
+
+
+    m_btnDetect->setEnabled(false);
+    m_btnDetect->setText("Detecting...");
+    statusBar()->showMessage("Running ALI_CBCT detection...");
+    QApplication::processEvents();  
+
+    QProcess proc;
+    proc.setProcessChannelMode(QProcess::MergedChannels);
+    proc.start(pySlicer, args);
+
+    if (!proc.waitForStarted(5000)) {
+        QMessageBox::critical(this, "Error", "Failed to start ALI_CBCT process.");
+        m_btnDetect->setEnabled(true);
+        m_btnDetect->setText("🔍 Detect (ALI_CBCT)");
+        return;
+    }
+
+
+    proc.waitForFinished(300000);
+
+    QString output = proc.readAll();
+    Logger::instance().info("ALI_CBCT output:\n" + output);
+
+    m_btnDetect->setEnabled(true);
+    m_btnDetect->setText("🔍 Detect (ALI_CBCT)");
+
+
+    QFileInfo niftiInfo(niftiPath);
+    QString baseName = niftiInfo.completeBaseName().replace(".nii", "");
+
+    QDir od(outDir);
+    QStringList jsons = od.entryList({"*_lm_Pred_*.mrk.json"}, QDir::Files, QDir::Time);
+    if (jsons.isEmpty()) {
+        QMessageBox::warning(this, "No result",
+            "Detection finished but no JSON was produced.\nCheck logs for ALI_CBCT errors.");
+        return;
+    }
+
+    QString jsonPath = od.filePath(jsons.first());  
+
+    auto entries = LandmarkIO::loadSlicerJSON(jsonPath, baseName, "T0");
+    if (entries.isEmpty()) {
+        QMessageBox::warning(this, "Parse error",
+            QString("Could not parse landmarks from %1").arg(jsonPath));
+        return;
+    }
+    auto lms = LandmarkIO::toLandmarks(entries, "T0");
+
+
+    m_allTimepointLandmarks.clear();
+    m_allTimepointLandmarks.push_back(lms);
+    m_manualLandmarks = lms;
+    m_useManualLandmarks = true;
+    updateLandmarkTable();
+
+    statusBar()->showMessage(
+        QString("Detected %1 landmark(s) from %2")
+            .arg(lms.size()).arg(niftiInfo.fileName()), 8000);
+    QMessageBox::information(this, "Detection complete",
+        QString("ALI_CBCT detected %1 landmark(s).\nSaved JSON: %2")
+            .arg(lms.size()).arg(jsonPath));
+}
+
 void MainWindow::updateLandmarkTable()
 {
     m_tableLandmarks->setRowCount(0);
@@ -575,21 +658,21 @@ void MainWindow::updateLandmarkTable()
         return;
     }
 
-    // En-tetes avec colonne Timepoint
+
     m_tableLandmarks->setColumnCount(6);
     m_tableLandmarks->setHorizontalHeaderLabels({"TP", "Name", "Abbr.", "X (mm)", "Y (mm)", "Z (mm)"});
     m_tableLandmarks->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
 
-    // Compter le total de lignes (tous landmarks de tous timepoints)
+
     int totalRows = 0;
     for (const auto& tpLms : m_allTimepointLandmarks)
         totalRows += tpLms.size();
     m_tableLandmarks->setRowCount(totalRows);
 
     int row = 0;
-    QColor tpColors[] = {QColor(33,150,243,40),    // T0 bleu
-                         QColor(76,175,80,40),     // T1 vert
-                         QColor(255,152,0,40)};    // T2 orange
+    QColor tpColors[] = {QColor(33,150,243,40),    
+                         QColor(76,175,80,40),    
+                         QColor(255,152,0,40)};    
 
     for (size_t tp = 0; tp < m_allTimepointLandmarks.size(); ++tp) {
         const auto& lms = m_allTimepointLandmarks[tp];
@@ -630,9 +713,11 @@ void MainWindow::updateLandmarkTable()
     m_lblLandmarkStatus->setText(
         QString("%1 landmarks across %2 timepoints").arg(totalLm).arg(m_allTimepointLandmarks.size()));
     m_lblLandmarkStatus->setStyleSheet("color:#2E7D32; font-size:11px; font-weight:bold;");
+
+    if (m_stepList && m_stepList->currentRow() == 1) displayLandmarksStep();  
 }
 
-// Pipeline
+
 
 void MainWindow::onRunPipeline()
 {
@@ -659,15 +744,13 @@ void MainWindow::onRunPipeline()
     connect(m_pipeline.get(), &PipelineManager::pipelineFinished, this, &MainWindow::onPipelineFinished);
     m_pipeline->setLoadedVolumes(work);
     if (m_useManualLandmarks && !m_manualLandmarks.empty()) {
-        // V5: Si on a charge plusieurs JSON (multi-timepoint), passer tout
+
         if (m_allTimepointLandmarks.size() >= 2)
             m_pipeline->setManualLandmarksMulti(m_allTimepointLandmarks);
         else
             m_pipeline->setManualLandmarks(m_manualLandmarks);
     }
 
-    m_btnRunPipeline->setEnabled(false);
-    m_btnStop->setEnabled(true);
     statusBar()->showMessage("Pipeline running...");
 
     QString ref="Sella";
@@ -675,7 +758,7 @@ void MainWindow::onRunPipeline()
         if (lm.name=="Sella"||lm.abbreviation=="S") { ref="Sella"; break; }
         if (lm.name=="Nasion"||lm.abbreviation=="N") ref="Nasion";
     }
-    m_pipeline->runFullPipeline(QStringList(), m_currentOutputDir, ref, 0.0, 50, 25.0);
+    m_pipeline->runFullPipeline(QStringList(), m_currentOutputDir, ref, 0.0, 300, 25.0);
 }
 
 void MainWindow::onPipelineProgress(int pct, const QString& msg)
@@ -685,14 +768,16 @@ void MainWindow::onPipelineProgress(int pct, const QString& msg)
 
 void MainWindow::onPipelineFinished(bool ok)
 {
-    m_btnRunPipeline->setEnabled(true);
-    m_btnStop->setEnabled(false);
     if (ok) {
         statusBar()->showMessage("Pipeline completed!", 5000);
         m_resultsDir = m_currentOutputDir;
         scanResultsDirectory();
         m_grpSliceControls->setEnabled(true);
         m_pipelineCompleted = true;
+        if (!m_timepointDirs.isEmpty()) {
+            if (m_stepList->currentRow() == 4) displayCurrentSlices();
+            else m_stepList->setCurrentRow(4);
+        }
         QMessageBox::information(this, "Success",
             QString("Pipeline completed!\nSlices saved to:\n%1").arg(m_currentOutputDir));
     } else {
@@ -725,6 +810,10 @@ void MainWindow::onLoadSlicesFromDisk()
     m_resultsDir = dir;
     scanResultsDirectory();
     m_grpSliceControls->setEnabled(true);
+    if (!m_timepointDirs.isEmpty()) {
+        if (m_stepList->currentRow() == 4) displayCurrentSlices();
+        else m_stepList->setCurrentRow(4);
+    }
 }
 
 void MainWindow::scanResultsDirectory()
@@ -749,49 +838,40 @@ void MainWindow::scanResultsDirectory()
 
     m_sliderSliceNum->setRange(0, m_numSlices-1);
     m_spinSliceNum->setRange(0, m_numSlices-1);
+
+
+    m_sliderSliceNum->blockSignals(true);
+    m_spinSliceNum->blockSignals(true);
     m_sliderSliceNum->setValue(m_numSlices/2);
+    m_spinSliceNum->setValue(m_numSlices/2);
+    m_sliderSliceNum->blockSignals(false);
+    m_spinSliceNum->blockSignals(false);
+    m_currentSliceNum = m_numSlices/2;
     statusBar()->showMessage(QString("%1 timepoints: %2").arg(m_timepointDirs.size()).arg(m_timepointDirs.join(", ")), 5000);
-    displayCurrentSlices();
 }
 
-// Display: VBox approach — no grid, no spacing issues
-//
-//   Header:  [  T0  ] [  T1  ]
-//   "Axial"
-//   [img T0] [img T1]
-//   "Coronal"
-//   [img T0] [img T1]
-//   "Sagittal"
-//   [img T0] [img T1]
-
-
-// ===== STEP RESULTS NAVIGATION (NEW) =====
 
 void MainWindow::onStepClicked(int row)
 {
-    // Panneau gauche masque sur l'etape Load (tout est dans la zone large de droite)
-    m_leftPanel->setVisible(row != 0);
 
-    m_grpVolumes->setVisible(false);            // volumes affiches a droite maintenant
+
+    m_leftPanel->setVisible(false);
+
+    m_grpVolumes->setVisible(false);
+    if (m_grpDetect) m_grpDetect->setVisible(row == 1);
     m_grpLandmarks->setVisible(row == 1);
-    m_grpSliceControls->setVisible(row == 4);
-    m_btnRunPipeline->setVisible(row == 2);
-    m_btnStop->setVisible(row == 2);
+    m_grpSliceControls->setVisible(false);      
 
     if (row == 0) {
         displayStep1Attributes();
+    } else if (row == 1) {
+        displayLandmarksStep();
     } else if (row == 4) {
         displayCurrentSlices();
-    } else {
-        QLayoutItem* child;
-        while ((child = m_rightContentLayout->takeAt(0)) != nullptr) {
-            if (child->widget()) delete child->widget();
-            delete child;
-        }
-        auto* lbl = new QLabel("Step results will appear here after Run Pipeline.");
-        lbl->setAlignment(Qt::AlignCenter);
-        lbl->setStyleSheet("color:#999; font-size:13px; padding:40px;");
-        m_rightContentLayout->addWidget(lbl);
+    } else if (row == 2) {
+        displayRegistrationStep();
+    } else if (row == 3) {
+        displayExtractionStep();
     }
 }
 
@@ -813,7 +893,7 @@ void MainWindow::displayStep1Attributes()
 
     m_lblTitle->setText("Step 1 — Load CBCT Volumes");
 
-    // ===== ZONE DE DROP (pleine largeur) =====
+
     auto* dropZone = new QWidget;
     dropZone->setObjectName("dropZone");
     dropZone->setAttribute(Qt::WA_StyledBackground, true);
@@ -850,7 +930,7 @@ void MainWindow::displayStep1Attributes()
 
     m_rightContentLayout->addWidget(dropZone);
 
-    // ===== TABLEAU : une ligne par volume, 4 parametres =====
+
     if (m_volumes.empty()) {
         auto* hint = new QLabel("No CBCT volumes loaded yet.");
         hint->setAlignment(Qt::AlignCenter);
@@ -911,11 +991,8 @@ void MainWindow::displayStep1Attributes()
     m_rightContentLayout->addStretch();
 }
 
-void MainWindow::displayCurrentSlices()
+void MainWindow::displayLandmarksStep()
 {
-    if (m_resultsDir.isEmpty() || m_timepointDirs.isEmpty()) return;
-
-    // Clear previous content
     QLayoutItem* child;
     while ((child = m_rightContentLayout->takeAt(0)) != nullptr) {
         if (child->layout()) {
@@ -929,50 +1006,987 @@ void MainWindow::displayCurrentSlices()
         delete child;
     }
 
-    QString sliceFile = QString("slice_%1.png").arg(m_currentSliceNum, 3, 10, QChar('0'));
+    m_lblTitle->setText("Step 2 — Cephalometric Landmark Detection");
+
+    auto* card = new QWidget;
+    card->setObjectName("lmCard");
+    card->setAttribute(Qt::WA_StyledBackground, true);
+    card->setStyleSheet(
+        "QWidget#lmCard { background:#ffffff; border:1px solid #e0e0e0; border-radius:10px; }");
+    card->setMinimumWidth(720);
+    card->setMaximumWidth(900);
+    auto* cardLayout = new QVBoxLayout(card);
+    cardLayout->setContentsMargins(22, 20, 22, 20);
+    cardLayout->setSpacing(12);
+    card->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Maximum);
+
+
+    auto* lblModel = new QLabel("ALI_CBCT model");
+    lblModel->setStyleSheet("font-size:13px; color:#666; border:none;");
+    cardLayout->addWidget(lblModel);
+
+    m_comboModel = new QComboBox;
+    m_comboModel->addItem("Upper_Bones_v2 — 14 landmarks");
+    m_comboModel->addItem("Cranial_Base — 10 landmarks");
+    m_comboModel->addItem("models_for_ali — ANS, S");
+    m_comboModel->setStyleSheet("QComboBox { font-size:14px; padding:6px; }");
+    if (!m_detectModel.isEmpty()) m_comboModel->setCurrentText(m_detectModel);
+    cardLayout->addWidget(m_comboModel);
+
+
+    auto* lblLm = new QLabel("Landmarks to detect");
+    lblLm->setStyleSheet("font-size:13px; color:#666; border:none; margin-top:6px;");
+    cardLayout->addWidget(lblLm);
+
+    auto* checksContainer = new QWidget;
+    auto* checksGrid = new QGridLayout(checksContainer);
+    checksGrid->setContentsMargins(0, 0, 0, 0);
+    checksGrid->setHorizontalSpacing(18);
+    checksGrid->setVerticalSpacing(4);
+    cardLayout->addWidget(checksContainer);
+
+
+    m_lblFovNote = new QLabel;
+    m_lblFovNote->setWordWrap(true);
+    m_lblFovNote->setStyleSheet("color:#E65100; font-size:10px; font-style:italic; border:none;");
+    m_lblFovNote->setVisible(false);
+
+    double fovZ = 0.0;
+    if (!m_volumes.empty()) {
+        auto sz = m_volumes[0]->getSize();
+        auto sp = m_volumes[0]->getSpacing();
+        fovZ = sz.z() * sp.z();
+    }
+    const bool reducedFov = (fovZ > 0.0 && fovZ < 70.0);
+
+    auto fillChecks = [this, checksGrid, reducedFov](const QString& model) {
+        QLayoutItem* it;
+        while ((it = checksGrid->takeAt(0)) != nullptr) {
+            if (it->widget()) delete it->widget();
+            delete it;
+        }
+        m_landmarkChecks.clear();
+
+
+        QString modelDir = "Upper_Bones_v2";
+        QString def = "ANS";
+        if (model.startsWith("Cranial_Base"))      { modelDir = "Cranial_Base";  def = "S";   }
+        else if (model.startsWith("models_for_ali")){ modelDir = "models_for_ali"; def = "ANS"; }
+
+
+        const QString aliBase = qEnvironmentVariable(
+            "ALI_CBCT_HOME", QDir::homePath() + "/ALI_CBCT_home");
+        QDir md(aliBase + "/ALI_CBCT_models/" + modelDir);
+        QStringList pts = md.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+
+
+        const QStringList peripheral = QStringList()
+            << "S" << "N" << "Ba" << "LPo" << "RPo" << "LFZyg" << "RFZyg"
+            << "ROr" << "LOr" << "RInfOr" << "LInfOr" << "RNC" << "LNC";
+
+        if (pts.isEmpty()) {  
+            m_lblFovNote->setText("⚠ Model folder not found: " + md.absolutePath());
+            m_lblFovNote->setVisible(true);
+            return;
+        }
+
+        int col = 0, rowg = 0;
+        for (const QString& p : pts) {
+            auto* cb = new QCheckBox(p);
+            cb->setStyleSheet("QCheckBox { font-size:14px; padding:2px; }");
+            if (p == def) { cb->setChecked(true); cb->setText(p + "  (ref)"); }
+            if (reducedFov && peripheral.contains(p)) {
+                cb->setChecked(false);
+                cb->setEnabled(false);
+                cb->setStyleSheet("QCheckBox { font-size:14px; padding:2px; color:#aaa; }");
+            }
+            m_landmarkChecks[p] = cb;
+            checksGrid->addWidget(cb, rowg, col);
+            if (++col == 2) { col = 0; ++rowg; }
+        }
+
+        if (reducedFov) {
+            m_lblFovNote->setText(
+                "⚠ Reduced FOV (Z < 70 mm): peripheral landmarks disabled "
+                "(absent in a reduced dental CBCT).");
+            m_lblFovNote->setVisible(true);
+        } else {
+            m_lblFovNote->setVisible(false);
+        }
+    };
+    fillChecks(m_comboModel->currentText());
+    connect(m_comboModel, &QComboBox::currentTextChanged, this,
+            [this, fillChecks](const QString& t) {
+                m_detectModel = t;
+                fillChecks(t);
+            });
+
+    cardLayout->addWidget(m_lblFovNote);
+
+
+    auto* btnLaunch = new QPushButton("Detect landmarks");
+    btnLaunch->setStyleSheet(
+        "QPushButton { background-color:#4CAF50; color:white; font-weight:bold; "
+        "padding:9px; border-radius:6px; font-size:13px; }"
+        "QPushButton:hover { background-color:#45a049; }"
+        "QPushButton:disabled { background-color:#ccc; color:#666; }");
+    connect(btnLaunch, &QPushButton::clicked, this, [this]() {
+        QTimer::singleShot(0, this, [this]() { onDetectLandmarksRich(); });
+    });
+    cardLayout->addWidget(btnLaunch);
+
+    auto* sep = new QFrame;
+    sep->setFixedHeight(1);
+    sep->setStyleSheet("background:#e0e0e0; border:none;");
+    cardLayout->addWidget(sep);
+
+
+    if (m_allTimepointLandmarks.empty()) {
+        auto* hint = new QLabel("No landmarks detected yet.\nClick \"Detect landmarks\".");
+        hint->setAlignment(Qt::AlignCenter);
+        hint->setStyleSheet("color:#999; font-size:12px; padding:18px; border:none;");
+        cardLayout->addWidget(hint);
+    } else {
+        int totalRows = 0;
+        for (const auto& tp : m_allTimepointLandmarks) totalRows += static_cast<int>(tp.size());
+
+        auto* table = new QTableWidget(totalRows, 6);
+        table->setHorizontalHeaderLabels({"TP", "Name", "Abbr.", "X (mm)", "Y (mm)", "Z (mm)"});
+        table->verticalHeader()->setVisible(false);
+        table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+        table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        table->setSelectionBehavior(QAbstractItemView::SelectRows);
+        table->setStyleSheet(
+            "QTableWidget { font-size:13px; border:1px solid #eee; border-radius:6px; }"
+            "QHeaderView::section { background:#e0e0e0; font-weight:bold; font-size:12px; padding:6px; }");
+
+        QColor tpColors[] = {QColor(33,150,243,40), QColor(76,175,80,40), QColor(255,152,0,40)};
+        int r = 0;
+        for (size_t tp = 0; tp < m_allTimepointLandmarks.size(); ++tp) {
+            QColor bg = tpColors[tp % 3];
+            QString tpName = QString("T%1").arg(tp);
+            for (const auto& lm : m_allTimepointLandmarks[tp]) {
+                QString vals[6] = {
+                    tpName, lm.name, lm.abbreviation,
+                    QString::number(lm.position.x(), 'f', 2),
+                    QString::number(lm.position.y(), 'f', 2),
+                    QString::number(lm.position.z(), 'f', 2)
+                };
+                for (int c = 0; c < 6; ++c) {
+                    auto* it = new QTableWidgetItem(vals[c]);
+                    it->setTextAlignment(Qt::AlignCenter);
+                    it->setBackground(bg);
+                    if (c == 0) it->setFont(QFont("", -1, QFont::Bold));
+                    table->setItem(r, c, it);
+                }
+                ++r;
+            }
+        }
+
+        const int headerH = 38;
+        const int rowH = 40;
+        const int tableH = headerH + totalRows * rowH + 4;
+        table->setMinimumHeight(tableH);
+        table->setMaximumHeight(tableH);
+        table->verticalHeader()->setDefaultSectionSize(rowH);
+        table->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        table->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        cardLayout->addWidget(table);
+
+        auto* status = new QLabel(QString("%1 landmark(s) · %2 timepoint(s)")
+                                  .arg(totalRows).arg(m_allTimepointLandmarks.size()));
+        status->setAlignment(Qt::AlignCenter);
+        status->setStyleSheet("color:#2E7D32; font-size:12px; font-weight:bold; border:none;");
+        cardLayout->addWidget(status);
+    }
+
+    auto* centerRow = new QHBoxLayout;
+    centerRow->addStretch(1);
+    centerRow->addWidget(card, 0, Qt::AlignTop);
+    centerRow->addStretch(1);
+    m_rightContentLayout->addLayout(centerRow);
+    m_rightContentLayout->addStretch();
+}
+
+
+void MainWindow::onDetectLandmarksRich()
+{
+
+    QStringList niftiPaths;
+    for (const QString& p : m_volumePaths) {
+        if (p.endsWith(".nii") || p.endsWith(".nii.gz"))
+            niftiPaths << p;
+    }
+    if (niftiPaths.isEmpty()) {
+
+        QStringList chosen = QFileDialog::getOpenFileNames(
+            this, "Select NIfTI volume(s) for detection (Ctrl/Shift+click for multiple)",
+            lastDirOrDefault("lastNiftiDir", DEFAULT_NIFTI_DIR),
+            "NIfTI (*.nii *.nii.gz)");
+        if (chosen.isEmpty()) return;
+        chosen.sort();                       
+        rememberDir("lastNiftiDir", chosen.first());
+        niftiPaths = chosen;
+    }
+
+
+    QStringList selected;
+    for (auto it = m_landmarkChecks.begin(); it != m_landmarkChecks.end(); ++it) {
+        if (it.value()->isChecked() && it.value()->isEnabled())
+            selected << it.key();
+    }
+    if (selected.isEmpty()) {
+        QMessageBox::warning(this, "No landmark", "Select at least one landmark to detect.");
+        return;
+    }
+
+
+    QStringList quoted;
+    for (const QString& lm : selected) quoted << QString("\"%1\"").arg(lm);
+    const QString lmArg = quoted.join(",");
+
+
+    QString model = "Upper_Bones_v2";
+    if (m_comboModel) {
+        const int idx = m_comboModel->currentIndex();
+        if (idx == 1) model = "Cranial_Base";
+        else if (idx == 2) model = "models_for_ali";
+    }
+
+
+    const QString aliBase   = qEnvironmentVariable(
+        "ALI_CBCT_HOME", QDir::homePath() + "/ALI_CBCT_home");
+    const QString pySlicer  = aliBase + "/Slicer-5.6.2-linux-amd64/bin/PythonSlicer";
+    const QString aliScript = aliBase + "/SlicerAutomatedDentalTools/ALI_CBCT/ALI_CBCT.py";
+    const QString modelsDir = aliBase + "/ALI_CBCT_models/" + model;
+    const QString outDir    = "/tmp/ali_out";
+    const QString tempDir   = "/tmp/ali_temp";
+
+    if (!QFileInfo::exists(pySlicer) || !QFileInfo::exists(aliScript)) {
+        QMessageBox::critical(this, "ALI_CBCT not found",
+            "PythonSlicer or ALI_CBCT.py not found.");
+        return;
+    }
+    if (!QFileInfo::exists(modelsDir)) {
+        QMessageBox::critical(this, "Model not found",
+            QString("Model directory not found:\n%1").arg(modelsDir));
+        return;
+    }
+    QDir().mkpath(outDir);
+    QDir().mkpath(tempDir);
+
+
+    m_allTimepointLandmarks.clear();
+    QStringList failedAll;   
+
+    for (int tp = 0; tp < niftiPaths.size(); ++tp) {
+        const QString niftiPath = niftiPaths[tp];
+        const QString tpName = QString("T%1").arg(tp);
+        QFileInfo niftiInfo(niftiPath);
+
+        statusBar()->showMessage(
+            QString("ALI_CBCT : %1 (%2 landmark(s))...").arg(tpName).arg(selected.size()));
+        QApplication::processEvents();
+
+
+        QString baseName = niftiInfo.completeBaseName();
+        baseName.replace(".nii", "");
+        {
+            QDir od(outDir);
+            for (const QString& old : od.entryList({baseName + "_lm_Pred_*.mrk.json"}, QDir::Files))
+                od.remove(old);
+        }
+
+        QStringList args;
+        args << aliScript << niftiPath << modelsDir << lmArg
+             << outDir << tempDir << "false" << "[1,0.3]" << "[1,1]" << "[64,64,64]" << "10";
+
+        QProcess proc;
+        proc.setProcessChannelMode(QProcess::MergedChannels);
+        proc.start(pySlicer, args);
+        if (!proc.waitForStarted(5000)) {
+            failedAll << QString("%1: process start failed").arg(tpName);
+            continue;
+        }
+        proc.waitForFinished(300000);
+        QString output = proc.readAll();
+        Logger::instance().info(QString("[%1] ALI_CBCT output:\n").arg(tpName) + output);
+
+
+        for (const QString& lm : selected)
+            if (output.contains(lm + " landmark not found") ||
+                output.contains("Fails for " + lm))
+                failedAll << QString("%1 / %2").arg(tpName, lm);
+
+
+        QDir od(outDir);
+        QStringList jsons = od.entryList({baseName + "_lm_Pred_*.mrk.json"}, QDir::Files, QDir::Time);
+        if (jsons.isEmpty()) {
+
+            m_allTimepointLandmarks.push_back({});
+            continue;
+        }
+        const QString jsonPath = od.filePath(jsons.first());
+
+
+        const QString destJson = niftiInfo.absolutePath() + "/" + jsons.first();
+        QFile::remove(destJson);                 
+        if (QFile::copy(jsonPath, destJson))
+            Logger::instance().info("Saved landmarks JSON: " + destJson);
+        else
+            Logger::instance().info("WARNING: could not copy JSON to " + destJson);
+
+        auto entries = LandmarkIO::loadSlicerJSON(jsonPath, baseName, tpName);
+        auto lms = LandmarkIO::toLandmarks(entries, tpName);
+        m_allTimepointLandmarks.push_back(lms);
+    }
+
+
+    if (!m_allTimepointLandmarks.empty())
+        m_manualLandmarks = m_allTimepointLandmarks[0];
+    m_useManualLandmarks = !m_manualLandmarks.empty();
+
+
+    displayLandmarksStep();
+
+
+    int totalTP = m_allTimepointLandmarks.size();
+    int totalLm = 0;
+    for (const auto& v : m_allTimepointLandmarks) totalLm += static_cast<int>(v.size());
+    statusBar()->showMessage(
+        QString("Detection done: %1 landmark(s) across %2 timepoint(s)").arg(totalLm).arg(totalTP), 8000);
+
+    if (!failedAll.isEmpty()) {
+        QMessageBox::warning(this, "Detection incomplete",
+            QString("Some landmarks could not be located (likely outside the FOV):\n\n%1")
+                .arg(failedAll.join("\n")));
+    }
+}
+
+void MainWindow::displayRegistrationStep()
+{
+
+    QLayoutItem* child;
+    while ((child = m_rightContentLayout->takeAt(0)) != nullptr) {
+        if (child->layout()) {
+            QLayoutItem* sub;
+            while ((sub = child->layout()->takeAt(0)) != nullptr) {
+                if (sub->widget()) delete sub->widget();
+                delete sub;
+            }
+        }
+        if (child->widget()) delete child->widget();
+        delete child;
+    }
+
+    m_lblTitle->setText("Step 3 — Rigid Registration");
+
+    auto* card = new QWidget;
+    card->setObjectName("regCard");
+    card->setAttribute(Qt::WA_StyledBackground, true);
+    card->setStyleSheet(
+        "QWidget#regCard { background:#ffffff; border:1px solid #e0e0e0; border-radius:10px; }");
+    card->setMinimumWidth(720);
+    card->setMaximumWidth(900);
+    card->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Maximum);
+    auto* cardLayout = new QVBoxLayout(card);
+    cardLayout->setContentsMargins(22, 20, 22, 20);
+    cardLayout->setSpacing(12);
+
+
+    auto* lblRef = new QLabel("Reference landmark (fixed anchor)");
+    lblRef->setStyleSheet("font-size:13px; color:#666; border:none;");
+    cardLayout->addWidget(lblRef);
+
+    m_comboRefLm = new QComboBox;
+
+    if (!m_allTimepointLandmarks.empty() && !m_allTimepointLandmarks[0].empty()) {
+        for (const auto& lm : m_allTimepointLandmarks[0])
+            m_comboRefLm->addItem(QString("%1 (T0)").arg(lm.name));
+    } else {
+        m_comboRefLm->addItem("ANS (T0)");
+    }
+    m_comboRefLm->setStyleSheet("QComboBox { font-size:14px; padding:6px; }");
+    cardLayout->addWidget(m_comboRefLm);
+
+ 
+    auto* lblMetric = new QLabel(""); lblMetric->setVisible(false);
+    lblMetric->setStyleSheet("font-size:12px; color:#888; border:none;");
+    cardLayout->addWidget(lblMetric);
+
+
+    auto* thrRow = new QHBoxLayout;
+    auto* lblThr = new QLabel(""); lblThr->setVisible(false);
+    m_spinDeltaThr = new QDoubleSpinBox(this);
+    m_spinDeltaThr->setRange(0.1, 10.0);
+    m_spinDeltaThr->setSingleStep(0.1);
+    m_spinDeltaThr->setValue(2.0);
+    m_spinDeltaThr->setVisible(false);
+    thrRow->addStretch();
+    cardLayout->addLayout(thrRow);
+
+
+    auto* btnRun = new QPushButton("Run Registration");
+    btnRun->setStyleSheet(
+        "QPushButton { background-color:#4CAF50; color:white; font-weight:bold; "
+        "padding:9px; border-radius:6px; font-size:13px; }"
+        "QPushButton:hover { background-color:#45a049; }"
+        "QPushButton:disabled { background-color:#ccc; color:#666; }");
+    connect(btnRun, &QPushButton::clicked, this, [this]() {
+        QTimer::singleShot(0, this, [this]() { onRunRegistration(); });
+    });
+    cardLayout->addWidget(btnRun);
+
+    auto* sep = new QFrame;
+    sep->setFixedHeight(1);
+    sep->setStyleSheet("background:#e0e0e0; border:none;");
+    cardLayout->addWidget(sep);
+
+
+    if (m_registrationReports.empty()) {
+        auto* hint = new QLabel("No registration yet.\nLoad volumes + landmarks (Steps 1-2), then click \"Run Registration\".");
+        hint->setAlignment(Qt::AlignCenter);
+        hint->setStyleSheet("color:#999; font-size:12px; padding:18px; border:none;");
+        cardLayout->addWidget(hint);
+    } else {
+        const int nRows = static_cast<int>(m_registrationReports.size());
+        auto* table = new QTableWidget(nRows, 5);
+        table->setHorizontalHeaderLabels(
+            {"TP", "ΔLandmark (mm)", "Status", "MI", "Time"});
+        table->setColumnHidden(1, true);
+        table->verticalHeader()->setVisible(false);
+        table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+        table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        table->setStyleSheet(
+            "QTableWidget { font-size:13px; border:1px solid #eee; border-radius:6px; }"
+            "QHeaderView::section { background:#e0e0e0; font-weight:bold; font-size:12px; padding:6px; }");
+
+        for (int r = 0; r < nRows; ++r) {
+            const auto& rep = m_registrationReports[r];
+            const bool ok = rep.converged && rep.deltaLandmark >= 0.0
+                            && rep.deltaLandmark < m_spinDeltaThr->value();
+
+            QString deltaStr = rep.deltaLandmark >= 0.0
+                ? QString::number(rep.deltaLandmark, 'f', 2) : "—";
+            QString statusStr = !rep.converged ? "✗ failed"
+                              : ok ? "✓ OK" : "⚠ > thr";
+            QString miStr = QString::number(rep.finalMetric, 'f', 4);
+            QString timeStr = QString("%1s").arg(rep.elapsedMs / 1000.0, 0, 'f', 1);
+
+            QString vals[5] = {
+                QString("T%1→T0").arg(rep.timepoint),
+                deltaStr, statusStr, miStr, timeStr
+            };
+
+            QColor bg = ok ? QColor(76,175,80,40) : QColor(244,67,54,40);
+            for (int c = 0; c < 5; ++c) {
+                auto* it = new QTableWidgetItem(vals[c]);
+                it->setTextAlignment(Qt::AlignCenter);
+                it->setBackground(bg);
+                if (c == 0) it->setFont(QFont("", -1, QFont::Bold));
+                table->setItem(r, c, it);
+            }
+        }
+
+        const int rowH = 40;
+        const int tableH = 38 + nRows * rowH + 4;
+        table->setMinimumHeight(tableH);
+        table->setMaximumHeight(tableH);
+        table->verticalHeader()->setDefaultSectionSize(rowH);
+        table->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        cardLayout->addWidget(table);
+
+
+        int okCount = 0;
+        for (const auto& rep : m_registrationReports)
+            if (rep.converged && rep.deltaLandmark >= 0.0
+                && rep.deltaLandmark < m_spinDeltaThr->value()) ++okCount;
+        auto* status = new QLabel(QString("%1/%2 registrations within threshold")
+                                  .arg(okCount).arg(nRows));
+        status->setAlignment(Qt::AlignCenter);
+        status->setStyleSheet("color:#2E7D32; font-size:12px; font-weight:bold; border:none;");
+        cardLayout->addWidget(status);
+    }
+
+    auto* centerRow = new QHBoxLayout;
+    centerRow->addStretch(1);
+    centerRow->addWidget(card, 0, Qt::AlignTop);
+    centerRow->addStretch(1);
+    m_rightContentLayout->addLayout(centerRow);
+    m_rightContentLayout->addStretch();
+}
+
+void MainWindow::onRunRegistration()
+{
+    if (m_volumes.size() < 2) {
+        QMessageBox::warning(this, "Registration",
+            "Load at least 2 CBCT volumes (Step 1) before registration.");
+        return;
+    }
+    if (m_allTimepointLandmarks.empty() || m_allTimepointLandmarks[0].empty()) {
+        QMessageBox::warning(this, "Registration",
+            "Detect landmarks first (Step 2): registration uses ANS_T0 as the anchor.");
+        return;
+    }
+
+    statusBar()->showMessage("Running rigid registration...");
+    QApplication::processEvents();
+
+
+    std::vector<std::shared_ptr<CBCTVolume>> work;
+    for (size_t i = 0; i < m_volumes.size(); ++i) {
+        auto c = std::make_shared<CBCTVolume>();
+        c->setITKImage(m_volumes[i]->getITKImage());
+        c->setName(m_volumes[i]->getName());
+        c->resampleIsotropic(0.3);
+        work.push_back(c);
+    }
+
+    m_pipeline = std::make_unique<PipelineManager>(this);
+    m_pipeline->setLoadedVolumes(work);
+    m_pipeline->setManualLandmarksMulti(m_allTimepointLandmarks);
+
+    const double thr = m_spinDeltaThr ? m_spinDeltaThr->value() : 2.0;
+    bool ok = m_pipeline->runRegistrationOnly("ANS", thr);
+
+
+    m_registrationReports = m_pipeline->getRegistrationReports();
+
+    displayRegistrationStep(); 
+
+    if (ok)
+        statusBar()->showMessage(
+            QString("Registration done: %1 timepoint(s)").arg(m_registrationReports.size()), 8000);
+    else
+        statusBar()->showMessage("Registration finished with errors (see logs)", 8000);
+
+
+}
+
+
+void MainWindow::displayExtractionStep()
+{
+    QLayoutItem* child;
+    while ((child = m_rightContentLayout->takeAt(0)) != nullptr) {
+        if (child->layout()) {
+            QLayoutItem* sub;
+            while ((sub = child->layout()->takeAt(0)) != nullptr) {
+                if (sub->widget()) delete sub->widget();
+                delete sub;
+            }
+        }
+        if (child->widget()) delete child->widget();
+        delete child;
+    }
+
+    m_lblTitle->setText("Step 4 — Slice Extraction");
+
+    auto* card = new QWidget;
+    card->setObjectName("extCard");
+    card->setAttribute(Qt::WA_StyledBackground, true);
+    card->setStyleSheet(
+        "QWidget#extCard { background:#ffffff; border:1px solid #e0e0e0; border-radius:10px; }");
+    card->setMinimumWidth(720);
+    card->setMaximumWidth(900);
+    card->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Maximum);
+    auto* cardLayout = new QVBoxLayout(card);
+    cardLayout->setContentsMargins(22, 20, 22, 20);
+    cardLayout->setSpacing(12);
+
+    auto* lblInfo = new QLabel("Extract 2D slices around the fixed anchor (ANS T0), "
+                               "in 3 orientations, then normalize the FOV.");
+    lblInfo->setWordWrap(true);
+    lblInfo->setStyleSheet("font-size:12px; color:#666; border:none;");
+    cardLayout->addWidget(lblInfo);
+
+
+    auto* rowN = new QHBoxLayout;
+    auto* lblN = new QLabel("Slices per orientation:");
+    lblN->setStyleSheet("font-size:13px; color:#666; border:none;");
+    m_spinNumSlices = new QSpinBox;
+    m_spinNumSlices->setRange(1, 500);
+    m_spinNumSlices->setValue(300);
+    m_spinNumSlices->setStyleSheet("QSpinBox { font-size:14px; padding:4px; }");
+    rowN->addWidget(lblN);
+    rowN->addWidget(m_spinNumSlices);
+    rowN->addStretch();
+    cardLayout->addLayout(rowN);
+
+
+    auto* rowR = new QHBoxLayout;
+    auto* lblR = new QLabel("Range around anchor (± mm):");
+    lblR->setStyleSheet("font-size:13px; color:#666; border:none;");
+    m_spinRangeMm = new QDoubleSpinBox;
+    m_spinRangeMm->setRange(1.0, 100.0);
+    m_spinRangeMm->setSingleStep(1.0);
+    m_spinRangeMm->setValue(25.0);
+    m_spinRangeMm->setStyleSheet("QDoubleSpinBox { font-size:14px; padding:4px; }");
+    rowR->addWidget(lblR);
+    rowR->addWidget(m_spinRangeMm);
+    rowR->addStretch();
+    cardLayout->addLayout(rowR);
+
+
+    auto* btnRun = new QPushButton("Run Extraction");
+    btnRun->setStyleSheet(
+        "QPushButton { background-color:#4CAF50; color:white; font-weight:bold; "
+        "padding:9px; border-radius:6px; font-size:13px; }"
+        "QPushButton:hover { background-color:#45a049; }"
+        "QPushButton:disabled { background-color:#ccc; color:#666; }");
+    connect(btnRun, &QPushButton::clicked, this, [this]() {
+        QTimer::singleShot(0, this, [this]() { onRunExtraction(); });
+    });
+    cardLayout->addWidget(btnRun);
+
+    auto* sep = new QFrame;
+    sep->setFixedHeight(1);
+    sep->setStyleSheet("background:#e0e0e0; border:none;");
+    cardLayout->addWidget(sep);
+
+
+    if (!m_extractionReport.ok) {
+        auto* hint = new QLabel("No extraction yet.\nRun Registration (Step 3) first, "
+                                "then click \"Run Extraction\".");
+        hint->setAlignment(Qt::AlignCenter);
+        hint->setStyleSheet("color:#999; font-size:12px; padding:18px; border:none;");
+        cardLayout->addWidget(hint);
+    } else {
+        auto* res = new QLabel(QString(
+            "✓ Extraction done\n\n"
+            "Timepoints: %1\n"
+            "Slices per orientation: %2\n"
+            "Total slices: %3  (= %1 × 3 orientations × %2)\n"
+            "Anchor: %4\n\n"
+            "Saved to: %5")
+            .arg(m_extractionReport.timepoints)
+            .arg(m_extractionReport.slicesPerOrientation)
+            .arg(m_extractionReport.totalSlices)
+            .arg(m_extractionReport.refLandmark)
+            .arg(m_extractionReport.outputDir));
+        res->setWordWrap(true);
+        res->setStyleSheet("color:#2E7D32; font-size:13px; border:none; padding:8px;");
+        cardLayout->addWidget(res);
+
+        auto* hintView = new QLabel("→ Go to Step 5 (Validation) to view slices and MCAGPC metrics.");
+        hintView->setStyleSheet("color:#45a049; font-size:12px; border:none; padding:4px;");
+        cardLayout->addWidget(hintView);
+    }
+
+    auto* centerRow = new QHBoxLayout;
+    centerRow->addStretch(1);
+    centerRow->addWidget(card, 0, Qt::AlignTop);
+    centerRow->addStretch(1);
+    m_rightContentLayout->addLayout(centerRow);
+    m_rightContentLayout->addStretch();
+}
+
+void MainWindow::onRunExtraction()
+{
+    if (!m_pipeline) {
+        QMessageBox::warning(this, "Extraction",
+            "Run Registration (Step 3) first.\n"
+            "Extraction reuses the aligned volumes from registration.");
+        return;
+    }
+
+
+    m_extractionOutputDir = QFileDialog::getExistingDirectory(
+        this, "Select Output Folder for slices",
+        lastDirOrDefault("lastOutputDir", DEFAULT_OUTPUT_DIR));
+    if (m_extractionOutputDir.isEmpty()) return;
+    rememberDir("lastOutputDir", m_extractionOutputDir);
+
+    const int nSlices = m_spinNumSlices ? m_spinNumSlices->value() : 50;
+    const double rangeMm = m_spinRangeMm ? m_spinRangeMm->value() : 25.0;
+
+    statusBar()->showMessage("Running slice extraction...");
+    QApplication::processEvents();
+
+    m_extractionReport = m_pipeline->runExtractionOnly(
+        m_extractionOutputDir, "ANS", nSlices, rangeMm);
+
+    displayExtractionStep(); 
+
+    if (m_extractionReport.ok) {
+        statusBar()->showMessage(
+            QString("Extraction done: %1 slices saved").arg(m_extractionReport.totalSlices), 8000);
+
+        m_resultsDir = m_extractionOutputDir;
+        scanResultsDirectory();            
+        m_grpSliceControls->setEnabled(true); 
+    } else {
+        statusBar()->showMessage("Extraction failed (see logs)", 8000);
+    }
+}
+
+static QImage applyWindowLevel(const QImage& src, int level, int width)
+{
+    if (src.isNull()) return src;
+    QImage gray = src.convertToFormat(QImage::Format_Grayscale8);
+
+
+    double scale = 255.0 / 2000.0;
+    double centre = level * scale;         
+    double demi   = (width * scale) / 2.0;  
+    if (demi < 1.0) demi = 1.0;
+    double lo = centre - demi;
+    double hi = centre + demi;
+
+
+    uchar lut[256];
+    for (int v = 0; v < 256; ++v) {
+        double out;
+        if (v <= lo)      out = 0.0;
+        else if (v >= hi) out = 255.0;
+        else              out = (v - lo) / (hi - lo) * 255.0;
+        lut[v] = static_cast<uchar>(qBound(0.0, out, 255.0));
+    }
+
+    const int W = gray.width(), H = gray.height();
+    for (int y = 0; y < H; ++y) {
+        uchar* row = gray.scanLine(y);
+        for (int x = 0; x < W; ++x)
+            row[x] = lut[row[x]];
+    }
+    return gray;
+}
+
+void MainWindow::displayCurrentSlices()
+{
+
+    if (m_resultsDir.isEmpty()) {
+        QString candidate = lastDirOrDefault("lastResultsDir", DEFAULT_OUTPUT_DIR);
+
+        QDir d(candidate);
+        bool hasTimepoints = false;
+        for (const auto& e : d.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+            if (e.startsWith("T")) {
+                QDir tp(d.filePath(e));
+                if (tp.exists("Axial") || tp.exists("Coronal") || tp.exists("Sagittal")) {
+                    hasTimepoints = true;
+                    break;
+                }
+            }
+        }
+        if (hasTimepoints) {
+            m_resultsDir = candidate;
+        }
+    }
+
+
+    if (!m_resultsDir.isEmpty() && m_timepointDirs.isEmpty()) {
+        scanResultsDirectory();
+    }
+
+
+    QLayoutItem* child;
+    while ((child = m_rightContentLayout->takeAt(0)) != nullptr) {
+        if (child->layout()) {
+            QLayoutItem* sub;
+            while ((sub = child->layout()->takeAt(0)) != nullptr) {
+                if (sub->widget()) delete sub->widget();
+                delete sub;
+            }
+        }
+        if (child->widget()) delete child->widget();
+        delete child;
+    }
+
+    m_lblTitle->setText("Step 5 — Validation & Visualization");
+
+
+    if (m_resultsDir.isEmpty() || m_timepointDirs.isEmpty()) {
+        auto* hint = new QLabel(
+            "No slices to display yet.\n\n"
+            "Run Extraction (Step 4) first, or use \"Load Results...\".");
+        hint->setAlignment(Qt::AlignCenter);
+        hint->setStyleSheet("color:#999; font-size:13px; padding:40px;");
+        m_rightContentLayout->addWidget(hint);
+        m_rightContentLayout->addStretch();
+        return;
+    }
+
+
+    auto* ctrlCard = new QWidget;
+    ctrlCard->setObjectName("ctrlCard");
+    ctrlCard->setAttribute(Qt::WA_StyledBackground, true);
+    ctrlCard->setStyleSheet(
+        "QWidget#ctrlCard { background:#ffffff; border:1px solid #e0e0e0; border-radius:10px; }");
+    ctrlCard->setMaximumWidth(900);
+    auto* ctrlLayout = new QVBoxLayout(ctrlCard);
+    ctrlLayout->setContentsMargins(18, 14, 18, 14);
+    ctrlLayout->setSpacing(10);
+
+
+    static int sIdx[3] = {-1, -1, -1};
+    for (int k = 0; k < 3; ++k)
+        if (sIdx[k] < 0 || sIdx[k] >= m_numSlices) sIdx[k] = m_numSlices / 2;
+
+
+    static QTimer* sliceTimer = nullptr;
+    if (!sliceTimer) { sliceTimer = new QTimer(this); sliceTimer->setSingleShot(true); }
+    disconnect(sliceTimer, nullptr, this, nullptr);
+    connect(sliceTimer, &QTimer::timeout, this, [this]() { displayCurrentSlices(); });
+
+
+    auto* rowWL = new QHBoxLayout;
+    auto* lblWin = new QLabel("Window:");
+    lblWin->setStyleSheet("font-size:13px; color:#666; border:none;");
+    lblWin->setFixedWidth(60);
+
+    auto* lblLvl = new QLabel("Level");
+    lblLvl->setStyleSheet("font-size:12px; color:#888; border:none;");
+    auto* sliderLvl = new QSlider(Qt::Horizontal);
+    sliderLvl->setRange(0, 2000);
+    sliderLvl->setValue(m_wlLevel);
+    sliderLvl->setFixedWidth(140);
+    auto* lblLvlVal = new QLabel(QString::number(m_wlLevel));
+    lblLvlVal->setStyleSheet("font-size:12px; color:#333; border:none;");
+    lblLvlVal->setFixedWidth(40);
+
+    auto* lblWid = new QLabel("Width");
+    lblWid->setStyleSheet("font-size:12px; color:#888; border:none;");
+    auto* sliderWid = new QSlider(Qt::Horizontal);
+    sliderWid->setRange(100, 4000);
+    sliderWid->setValue(m_wlWidth);
+    sliderWid->setFixedWidth(140);
+    auto* lblWidVal = new QLabel(QString::number(m_wlWidth));
+    lblWidVal->setStyleSheet("font-size:12px; color:#333; border:none;");
+    lblWidVal->setFixedWidth(45);
+
+    auto* btnReset = new QPushButton("Reset");
+    btnReset->setStyleSheet("QPushButton { font-size:11px; padding:3px 8px; }");
+
+    rowWL->addWidget(lblWin);
+    rowWL->addWidget(lblLvl);
+    rowWL->addWidget(sliderLvl);
+    rowWL->addWidget(lblLvlVal);
+    rowWL->addSpacing(12);
+    rowWL->addWidget(lblWid);
+    rowWL->addWidget(sliderWid);
+    rowWL->addWidget(lblWidVal);
+    rowWL->addStretch();
+    rowWL->addWidget(btnReset);
+    ctrlLayout->addLayout(rowWL);
+
+
+    static QTimer* wlTimer = nullptr;
+    if (!wlTimer) { wlTimer = new QTimer(this); wlTimer->setSingleShot(true); }
+
+    auto applyWL = [this, lblLvlVal, lblWidVal, sliderLvl, sliderWid]() {
+        m_wlLevel = sliderLvl->value();
+        m_wlWidth = sliderWid->value();
+        lblLvlVal->setText(QString::number(m_wlLevel));
+        lblWidVal->setText(QString::number(m_wlWidth));
+    };
+    connect(sliderLvl, &QSlider::valueChanged, this, [this, applyWL]() {
+        applyWL();
+        wlTimer->stop();
+        wlTimer->start(150);   
+    });
+    connect(sliderWid, &QSlider::valueChanged, this, [this, applyWL]() {
+        applyWL();
+        wlTimer->stop();
+        wlTimer->start(150);
+    });
+
+    disconnect(wlTimer, nullptr, this, nullptr);
+    connect(wlTimer, &QTimer::timeout, this, [this]() { displayCurrentSlices(); });
+
+    connect(btnReset, &QPushButton::clicked, this, [this]() {
+        m_wlLevel = 300; m_wlWidth = 2400;
+        displayCurrentSlices();
+    });
+
+
+    auto* ctrlRow = new QHBoxLayout;
+    ctrlRow->addStretch(1);
+    ctrlRow->addWidget(ctrlCard, 0, Qt::AlignTop);
+    ctrlRow->addStretch(1);
+    m_rightContentLayout->addLayout(ctrlRow);
+
+
     QStringList orients = {"Axial", "Coronal", "Sagittal"};
     int numTP = m_timepointDirs.size();
 
-    // Compute image size
+
+    const int MIN_IMG = 200;  
+    const int MAX_IMG = 340;  
+    const int labelW  = 90;    
+    const int spacing = 8;
+
     int vpW = m_scrollArea->viewport()->width() - 20;
-    int vpH = m_scrollArea->viewport()->height() - 60;
-    int imgSize = qMin(qMax(150, vpW / qMax(1, numTP) - 8),
-                       qMax(150, vpH / 3 - 30));
+
+    int fitSize = (vpW - labelW - (numTP - 1) * spacing) / qMax(1, numTP);
+    int imgSize = qBound(MIN_IMG, fitSize, MAX_IMG);
+
+
+    int gridW = labelW + numTP * imgSize + (numTP - 1) * spacing;
+
+    bool needsHScroll = gridW > vpW;
 
     auto* headerRow = new QHBoxLayout;
-    headerRow->setSpacing(4);
+    headerRow->setSpacing(spacing);
+    if (!needsHScroll) headerRow->addStretch(); 
+    headerRow->addSpacing(labelW);               
     for (int t = 0; t < numTP; ++t) {
         auto* lbl = new QLabel(m_timepointDirs[t]);
         lbl->setAlignment(Qt::AlignCenter);
-        lbl->setFixedHeight(20);
-        lbl->setStyleSheet("font-size:14px; font-weight:bold; color:#333;");
+        lbl->setFixedWidth(imgSize);
+        lbl->setStyleSheet("font-size:15px; font-weight:bold; color:#333;");
         headerRow->addWidget(lbl);
     }
+    headerRow->addStretch();
     m_rightContentLayout->addLayout(headerRow);
 
-    for (int o = 0; o < 3; ++o) {
-        // Orientation label — small, left-aligned, tight
-        auto* orientLabel = new QLabel(orients[o]);
-        orientLabel->setStyleSheet(
-            "font-size:11px; font-weight:bold; color:#555; padding:1px 4px; margin:0px;");
-        orientLabel->setFixedHeight(16);
-        m_rightContentLayout->addWidget(orientLabel);
-
-        // Image row
+    for (int o = 0; o < 3; ++o) {   
         auto* imgRow = new QHBoxLayout;
-        imgRow->setSpacing(4);
-        imgRow->setContentsMargins(0, 0, 0, 0);
+        imgRow->setSpacing(spacing);
+        if (!needsHScroll) imgRow->addStretch(); 
+
+
+        auto* leftCol = new QWidget;
+        leftCol->setFixedWidth(labelW);
+        auto* leftColLay = new QVBoxLayout(leftCol);
+        leftColLay->setContentsMargins(0, 0, 0, 0);
+        leftColLay->setSpacing(4);
+        auto* orientLabel = new QLabel(orients[o]);
+        orientLabel->setAlignment(Qt::AlignCenter);
+        orientLabel->setStyleSheet("font-size:12px; font-weight:bold; color:#555;");
+        auto* sliceSpin = new QSpinBox;
+        sliceSpin->setRange(0, m_numSlices - 1);
+        sliceSpin->setValue(sIdx[o]);
+        sliceSpin->setToolTip("Numero de coupe a afficher");
+        sliceSpin->setStyleSheet("QSpinBox { font-size:12px; padding:2px; }");
+        connect(sliceSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, o](int v) {
+            sIdx[o] = v;
+            sliceTimer->stop();
+            sliceTimer->start(250);
+        });
+        leftColLay->addStretch();
+        leftColLay->addWidget(orientLabel);
+        leftColLay->addWidget(sliceSpin);
+        leftColLay->addStretch();
+        imgRow->addWidget(leftCol);
+
+
+        QString sliceFile = QString("slice_%1.png").arg(sIdx[o], 3, 10, QChar('0'));
 
         for (int t = 0; t < numTP; ++t) {
             QString path = QDir(m_resultsDir).filePath(
                 QString("%1/%2/%3").arg(m_timepointDirs[t], orients[o], sliceFile));
 
-            auto* imgLabel = new QLabel;
+
+            auto* container = new QWidget;
+            container->setFixedSize(imgSize, imgSize);
+
+            auto* imgLabel = new QLabel(container);
+            imgLabel->setGeometry(0, 0, imgSize, imgSize);
             imgLabel->setAlignment(Qt::AlignCenter);
-            imgLabel->setFixedSize(imgSize, imgSize);
 
             QImage img(path);
             if (!img.isNull()) {
+                img = applyWindowLevel(img, m_wlLevel, m_wlWidth);
                 QPixmap px = QPixmap::fromImage(img).scaled(
                     imgSize - 2, imgSize - 2, Qt::KeepAspectRatio, Qt::SmoothTransformation);
                 imgLabel->setPixmap(px);
@@ -981,17 +1995,110 @@ void MainWindow::displayCurrentSlices()
                 imgLabel->setText("—");
                 imgLabel->setStyleSheet("border:1px dashed #bbb; color:#aaa; background:#f0f0f0;");
             }
-            imgLabel->setToolTip(QString("%1 — %2 — Slice %3")
-                .arg(m_timepointDirs[t], orients[o]).arg(m_currentSliceNum));
-            imgRow->addWidget(imgLabel);
+
+
+            auto* btnZoom = new QToolButton(container);
+            btnZoom->setText("⛶");
+            btnZoom->setToolTip("Agrandir");
+            btnZoom->setCursor(Qt::PointingHandCursor);
+            btnZoom->setStyleSheet(
+                "QToolButton { background:rgba(0,0,0,0.55); color:white; border:none; "
+                "border-radius:4px; font-size:16px; padding:2px 6px; }"
+                "QToolButton:hover { background:rgba(76,175,80,0.9); }");
+            btnZoom->setGeometry(imgSize - 34, 4, 30, 28);
+
+            QString tp = m_timepointDirs[t];
+            QString orient = orients[o];
+            connect(btnZoom, &QToolButton::clicked, this, [this, tp, orient, o]() {
+                m_currentSliceNum = sIdx[o];
+                showZoomedSlice(tp, orient);
+            });
+
+            imgRow->addWidget(container);
         }
+        imgRow->addStretch();
         m_rightContentLayout->addLayout(imgRow);
     }
 
     m_rightContentLayout->addStretch();
-
-    m_lblTitle->setText(QString("Slice %1/%2 — %3 timepoints × 3 orientations")
-        .arg(m_currentSliceNum+1).arg(m_numSlices).arg(numTP));
 }
 
+void MainWindow::showZoomedSlice(const QString& timepoint, const QString& orientation)
+{
+    auto* dlg = new QDialog(this);
+    dlg->setWindowTitle(QString("%1 — %2").arg(timepoint, orientation));
+    dlg->resize(720, 800);
+    dlg->setStyleSheet("QDialog { background:#1e1e1e; }");
+
+    auto* layout = new QVBoxLayout(dlg);
+    layout->setContentsMargins(10, 10, 10, 10);
+    layout->setSpacing(8);
+
+
+    auto* lblTitle = new QLabel;
+    lblTitle->setAlignment(Qt::AlignCenter);
+    lblTitle->setStyleSheet("color:white; font-size:14px; font-weight:bold;");
+    layout->addWidget(lblTitle);
+
+    
+    auto* lblImg = new QLabel;
+    lblImg->setAlignment(Qt::AlignCenter);
+    lblImg->setStyleSheet("background:black; border:1px solid #444;");
+    lblImg->setMinimumSize(640, 640);
+    layout->addWidget(lblImg, 1);
+
+    
+    auto* navRow = new QHBoxLayout;
+    auto* btnPrev = new QPushButton("◄ Prev");
+    auto* btnNext = new QPushButton("Next ►");
+    auto* lblNav = new QLabel;
+    lblNav->setAlignment(Qt::AlignCenter);
+    lblNav->setStyleSheet("color:white; font-size:13px;");
+    btnPrev->setStyleSheet("QPushButton { padding:6px 14px; }");
+    btnNext->setStyleSheet("QPushButton { padding:6px 14px; }");
+    navRow->addWidget(btnPrev);
+    navRow->addStretch();
+    navRow->addWidget(lblNav);
+    navRow->addStretch();
+    navRow->addWidget(btnNext);
+    layout->addLayout(navRow);
+
+
+    auto sliceIdx = std::make_shared<int>(m_currentSliceNum);
+
+    auto refresh = [this, lblImg, lblTitle, lblNav, timepoint, orientation, sliceIdx]() {
+        QString f = QString("slice_%1.png").arg(*sliceIdx, 3, 10, QChar('0'));
+        QString path = QDir(m_resultsDir).filePath(
+            QString("%1/%2/%3").arg(timepoint, orientation, f));
+        QImage img(path);
+        if (!img.isNull()) {
+            img = applyWindowLevel(img, m_wlLevel, m_wlWidth);
+            QPixmap px = QPixmap::fromImage(img).scaled(
+                640, 640, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            lblImg->setPixmap(px);
+        } else {
+            lblImg->setText("— (no image) —");
+            lblImg->setStyleSheet("background:black; color:#888; border:1px solid #444;");
+        }
+        lblTitle->setText(QString("%1 — %2 — Slice %3").arg(timepoint, orientation).arg(*sliceIdx));
+        lblNav->setText(QString("%1 / %2").arg(*sliceIdx + 1).arg(m_numSlices));
+    };
+
+    connect(btnPrev, &QPushButton::clicked, dlg, [this, sliceIdx, refresh]() {
+        if (*sliceIdx > 0) { (*sliceIdx)--; refresh(); }
+    });
+    connect(btnNext, &QPushButton::clicked, dlg, [this, sliceIdx, refresh]() {
+        if (*sliceIdx < m_numSlices - 1) { (*sliceIdx)++; refresh(); }
+    });
+
+    refresh();
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->show();
+}
+
+
+void MainWindow::onWindowLevelChanged()
+{
+    displayCurrentSlices();
+}
 } // namespace CBCTAlign

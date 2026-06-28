@@ -22,11 +22,11 @@ void SliceViewer2D::setSlice(const Slice2D& slice) {
         float maxVal = *std::max_element(slice.data.begin(), slice.data.end());
         
         if (maxVal <= 255.0f) {
-            // Données PNG: windowing 0-255
+
             m_windowCenter = 127.0;
             m_windowWidth = 255.0;
         } else {
-            // Données CBCT: windowing HU
+
             m_windowCenter = 400.0;
             m_windowWidth = 1500.0;
         }

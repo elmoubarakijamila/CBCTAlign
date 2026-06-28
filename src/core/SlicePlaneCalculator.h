@@ -1,6 +1,5 @@
 /**
  * @file SlicePlaneCalculator.h
- * @brief Calcul des plans de coupe guidés par points céphalométriques
  */
 
 #ifndef SLICEPLANECALCULATOR_H
@@ -13,32 +12,23 @@
 
 namespace CBCTAlign {
 
-/**
- * @enum SliceOrientation
- * @brief Orientations de coupe disponibles
- */
+
 enum class SliceOrientation {
-    Axial,      ///< Plan horizontal (XY), normal = Z
-    Coronal,    ///< Plan frontal (XZ), normal = Y
-    Sagittal    ///< Plan latéral (YZ), normal = X
+    Axial,     
+    Coronal,    
+    Sagittal    
 };
 
-/**
- * @struct SlicePlane
- * @brief Définition mathématique d'un plan de coupe
- */
+
 struct SlicePlane {
-    Eigen::Vector3d normal;         ///< Vecteur normal unitaire
-    Eigen::Vector3d referencePoint; ///< Point de référence (landmark)
-    double distance;                ///< Distance signée au plan
-    SliceOrientation orientation;   ///< Type d'orientation
-    QString referenceLandmark;      ///< Nom du landmark de référence
+    Eigen::Vector3d normal;         
+    Eigen::Vector3d referencePoint; 
+    double distance;                
+    SliceOrientation orientation;   
+    QString referenceLandmark;      
 };
 
-/**
- * @class SlicePlaneCalculator
- * @brief Calculateur de plans de coupe guidés par landmarks
- */
+
 class SlicePlaneCalculator : public QObject
 {
     Q_OBJECT
@@ -58,4 +48,4 @@ private:
 
 } // namespace CBCTAlign
 
-#endif // SLICEPLANECALCULATOR_H
+#endif 

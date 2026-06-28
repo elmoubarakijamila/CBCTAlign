@@ -1,6 +1,5 @@
 /**
  * @file MathUtils.cpp
- * @brief Fonctions mathématiques
  */
 #include "MathUtils.h"
 

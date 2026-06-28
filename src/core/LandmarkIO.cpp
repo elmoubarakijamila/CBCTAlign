@@ -1,10 +1,5 @@
 /**
  * @file LandmarkIO.cpp
- * @brief I/O landmarks CSV + Slicer .mrk.json
- *
- * MODIFICATIONS v2:
- *   - Ajout loadSlicerJSON() pour importer le format 3D Slicer Markups
- *   - Mapping des labels ALI_CBCT (S, N, Ba, etc.) vers noms CBCTAlign
  */
 #include "LandmarkIO.h"
 #include <QFile>
@@ -83,24 +78,6 @@ QList<LandmarkEntry> LandmarkIO::load(const QString& filepath)
     return entries;
 }
 
-// NOUVEAU: Import format 3D Slicer Markups JSON (.mrk.json)
-//
-// Format attendu (ALI_CBCT output):
-// {
-//   "markups": [{
-//     "type": "Fiducial",
-//     "coordinateSystem": "LPS",
-//     "controlPoints": [
-//       { "label": "S", "position": [-2.25, 34.95, 22.80] },
-//       { "label": "N", "position": [...] },
-//       ...
-//     ]
-//   }]
-// }
-//
-//   ITK utilise LPS nativement, donc pas de conversion nécessaire.
-//   Si le système de coordonnées est "RAS" (rare pour ALI_CBCT):
-//     x_lps = -x_ras, y_lps = -y_ras, z_lps = z_ras
 
 QList<LandmarkEntry> LandmarkIO::loadSlicerJSON(const QString& filepath,
                                                    const QString& patientID,
@@ -174,9 +151,9 @@ QList<LandmarkEntry> LandmarkIO::loadSlicerJSON(const QString& filepath,
         LandmarkEntry entry;
         entry.patientID = patientID;
         entry.timepoint = timepoint;
-        entry.name = labelMap.value(label, label); // Use mapped name or raw label
+        entry.name = labelMap.value(label, label); 
         entry.position = Eigen::Vector3d(x, y, z);
-        entry.confidence = 0.85; // ALI_CBCT average precision ~1.54mm
+        entry.confidence = 0.85; 
 
         entries.append(entry);
 
@@ -205,7 +182,7 @@ std::vector<Landmark> LandmarkIO::toLandmarks(
         lm.position = entry.position;
         lm.confidence = entry.confidence;
 
-        // Set abbreviation
+
         if (entry.name == "Sella")          lm.abbreviation = "S";
         else if (entry.name == "Nasion")    lm.abbreviation = "N";
         else if (entry.name == "Basion")    lm.abbreviation = "Ba";

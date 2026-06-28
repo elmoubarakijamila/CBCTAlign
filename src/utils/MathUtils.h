@@ -1,6 +1,5 @@
 /**
  * @file MathUtils.h
- * @brief Fonctions mathématiques utilitaires
  */
 #ifndef MATHUTILS_H
 #define MATHUTILS_H
@@ -19,9 +18,6 @@ Eigen::Matrix3d eulerToRotation(double rx, double ry, double rz);
 Eigen::Vector3d rotationToEuler(const Eigen::Matrix3d& R);
 Eigen::Matrix4d makeTransform(const Eigen::Matrix3d& R, const Eigen::Vector3d& t);
 
-/**
- * @brief Calcul du SSIM — source unique (utilisé par ValidationMetrics aussi)
- */
 double computeSSIM(const std::vector<float>& img1, const std::vector<float>& img2,
                    int width, int height);
 

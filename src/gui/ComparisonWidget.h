@@ -1,6 +1,5 @@
 /**
- * @file ComparisonWidget_IMPROVED.h
- * @brief Widget amélioré pour comparaison multi-temps avec grid layout
+ * @file ComparisonWidget.h
  */
 
 #ifndef COMPARISONWIDGET_H
@@ -22,22 +21,11 @@ class ComparisonWidget : public QWidget {
     
 public:
     explicit ComparisonWidget(QWidget* parent = nullptr);
-    
-    /**
-     * @brief Afficher les coupes de tous les timepoints
-     * @param slices Vecteur de coupes (une par timepoint)
-     * @param orientation Orientation des coupes
-     */
+
     void setSlices(const std::vector<Slice2D>& slices, SliceOrientation orientation);
-    
-    /**
-     * @brief Activer/désactiver le zoom synchronisé
-     */
+
     void setSynchronizedZoom(bool enabled);
-    
-    /**
-     * @brief Effacer toutes les vues
-     */
+
     void clear();
     
 signals:
@@ -56,9 +44,9 @@ private:
     std::vector<QLabel*> m_labels;
     
     bool m_syncZoom;
-    int m_numColumns;  // Nombre de colonnes dans la grille
+    int m_numColumns;  
 };
 
 } // namespace CBCTAlign
 
-#endif // COMPARISONWIDGET_H
+#endif 

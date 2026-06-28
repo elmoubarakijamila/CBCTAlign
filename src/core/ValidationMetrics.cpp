@@ -1,6 +1,5 @@
 /**
  * @file ValidationMetrics.cpp
- * @brief Métriques de validation incluant MCAGPC
  */
 #include "ValidationMetrics.h"
 #include "MathUtils.h"
@@ -20,7 +19,7 @@ double ValidationMetrics::computeSSIM(const Slice2D& s1, const Slice2D& s2)
         Logger::instance().warning("SSIM: dimensions différentes");
         return 0.0;
     }
-    // Déléguer à MathUtils (DRY)
+
     return MathUtils::computeSSIM(s1.data, s2.data, s1.width, s1.height);
 }
 
@@ -180,7 +179,7 @@ ValidationResult ValidationMetrics::validateSliceCorrespondence(
         return r;
     }
 
-    // Trouver Nasion
+
     Eigen::Vector3d nT0 = Eigen::Vector3d::Zero(), nTi = Eigen::Vector3d::Zero();
     for (const auto& lm : landmarksT0) if (lm.abbreviation == "N") nT0 = lm.position;
     for (const auto& lm : landmarksTi) if (lm.abbreviation == "N") nTi = lm.position;

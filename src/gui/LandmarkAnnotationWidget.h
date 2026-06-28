@@ -31,16 +31,16 @@ public:
                    const QString& patientID,
                    const QString& timepoint);
 
-    /// Retourne les landmarks annotes sous forme de vector<Landmark>
+
     std::vector<Landmark> getLandmarks() const;
 
     void loadLandmarksFromFile(const QString& filepath);
     bool hasMinimumLandmarks() const;
 
-    /// Charge les landmarks depuis un fichier .mrk.json de 3D Slicer (ALI_CBCT)
+
     bool loadFromSlicerJSON(const QString& filepath);
 
-    /// Configure le chemin vers PythonSlicer et les modeles ALI_CBCT
+
     void setALICBCTPaths(const QString& slicerPython, const QString& modelsDir);
     void setCurrentNIfTIPath(const QString& path) { m_currentNIfTIPath = path; }
 
@@ -61,7 +61,7 @@ private slots:
     void onClear();
     void onValidate();
 
-    // ALI_CBCT auto-detection
+
     void onAutoDetectALI();
     void onAutoDetectFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void onImportSlicerJSON();
@@ -79,7 +79,7 @@ private:
     std::shared_ptr<CBCTVolume> m_volume;
     QString m_patientID;
     QString m_timepoint;
-    QString m_currentNIfTIPath;  // Chemin du fichier NIfTI courant
+    QString m_currentNIfTIPath; 
 
     QMap<QString, Eigen::Vector3d> m_landmarks;
     QStringList m_landmarkNames = {"Sella", "Nasion", "Menton", "ZygionLeft", "ZygionRight"};
@@ -91,7 +91,7 @@ private:
     double m_spacing[3] = {1.0, 1.0, 1.0};
     double m_origin[3] = {0.0, 0.0, 0.0};
 
-    // UI widgets
+
     QSlider* m_axialSlider;
     QSlider* m_sagittalSlider;
     QSlider* m_coronalSlider;
@@ -109,7 +109,7 @@ private:
     QPushButton* m_removeBtn;
     QPushButton* m_modifyBtn;
 
-    // ALI_CBCT auto-detection
+
     QPushButton* m_btnAutoDetect;
     QPushButton* m_btnImportJSON;
     QProcess* m_aliProcess = nullptr;

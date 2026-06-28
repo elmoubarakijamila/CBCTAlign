@@ -1,6 +1,5 @@
 /**
  * @file MainWindow.h
- * @brief CBCTAlign Main Window
  */
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
@@ -13,12 +12,19 @@
 #include <QLabel>
 #include <QTableWidget>
 #include <QGroupBox>
+#include <QComboBox>
+#include <QCheckBox>
+#include <QGridLayout>
+#include <QHBoxLayout>
+#include <QMap>
 #include <QSpinBox>
 #include <QVBoxLayout>
 #include <QScrollArea>
 #include <memory>
+#include <QDialog>
+#include <QToolButton>
 #include <vector>
-
+#include <QDoubleSpinBox>
 #include "../core/PipelineManager.h"
 #include "../core/CBCTVolume.h"
 #include "../core/SliceExtractor.h"
@@ -32,6 +38,7 @@ class MainWindow : public QMainWindow {
 public:
     explicit MainWindow(QWidget* parent = nullptr);
 
+
 private slots:
     void onLoadDICOM();
     void onLoadNIfTI();
@@ -42,6 +49,15 @@ private slots:
     void onLoadSlicesFromDisk();
     void onLoadLandmarksJSON();
     void onLoadLandmarksCSV();
+    void onDetectLandmarks();         
+    void onDetectLandmarksRich();      
+    void displayRegistrationStep();   
+    void onRunRegistration();         
+    void displayExtractionStep();
+    void onRunExtraction();
+    void showZoomedSlice(const QString& timepoint, const QString& orientation);
+    void onWindowLevelChanged();
+
 
 private:
     void setupUI();
@@ -50,33 +66,60 @@ private:
     void scanResultsDirectory();
     void displayCurrentSlices();
     void updateLandmarkTable();
-    void onStepClicked(int row);          // NEW: affiche le résultat de l'étape
-    void displayStep1Attributes();        // NEW: tableau des 4 attributs
+    void onStepClicked(int row);          
+    void displayStep1Attributes();        
+    void displayLandmarksStep();  
+
+
+    QSpinBox* m_spinNumSlices = nullptr;
+    QDoubleSpinBox* m_spinRangeMm = nullptr;
+    PipelineManager::ExtractionReport m_extractionReport;
+    QString m_extractionOutputDir;
+
 
     QListWidget*   m_stepList;
-    QWidget*       m_leftPanel;        // NEW
-    // Left panel
-    QGroupBox*     m_grpVolumes;       // NEW
+    QWidget*       m_leftPanel;        
+
+    QGroupBox*     m_grpVolumes;       
     QListWidget*   m_volumeList;
 
     QPushButton*   m_btnLoadDICOM;
     QPushButton*   m_btnLoadNIfTI;
-    QPushButton*   m_btnRunPipeline;
-    QPushButton*   m_btnStop;
+
+
+
+    QGroupBox*   m_grpDetect = nullptr;
+    QComboBox*   m_comboModel = nullptr;
+    QComboBox* m_comboRefLm = nullptr;     
+    QDoubleSpinBox* m_spinDeltaThr = nullptr; 
+    QWidget*     m_detectChecksContainer = nullptr;   
+    QPushButton* m_btnLaunchDetect = nullptr;
+    QLabel*      m_lblFovNote;
+    QMap<QString, QCheckBox*> m_landmarkChecks;   
+    QString      m_detectModel;                   
+    QStringList  m_volumePaths;                               
 
     QGroupBox*     m_grpLandmarks;
     QPushButton*   m_btnLoadJSON;
     QPushButton*   m_btnLoadCSV;
+    QPushButton*   m_btnDetect;       
     QTableWidget*  m_tableLandmarks;
     QLabel*        m_lblLandmarkStatus;
 
     QGroupBox*     m_grpSliceControls;
     QSlider*       m_sliderSliceNum;
+
+    QSlider* m_sliderLevel = nullptr;
+    QSlider* m_sliderWidth = nullptr;
+    QLabel*  m_lblLevelVal = nullptr;
+    QLabel*  m_lblWidthVal = nullptr;
+    int m_wlLevel = 300;    
+    int m_wlWidth = 2400;    
     QSpinBox*      m_spinSliceNum;
     QLabel*        m_lblSliceInfo;
     QPushButton*   m_btnLoadSlices;
 
-    // Right panel
+
     QLabel*        m_lblTitle;
     QScrollArea*   m_scrollArea;
     QWidget*       m_scrollContent;
@@ -86,7 +129,8 @@ private:
     std::vector<std::shared_ptr<CBCTVolume>> m_volumes;
     std::unique_ptr<PipelineManager> m_pipeline;
     std::vector<Landmark> m_manualLandmarks;
-    std::vector<std::vector<Landmark>> m_allTimepointLandmarks;  // V4: ANS per timepoint
+    std::vector<std::vector<Landmark>> m_allTimepointLandmarks; 
+    std::vector<PipelineManager::RegistrationReport> m_registrationReports;
     bool m_useManualLandmarks = false;
 
     QString     m_currentOutputDir;
