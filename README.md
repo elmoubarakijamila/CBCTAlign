@@ -33,7 +33,7 @@ CBCTAlign adopts a modular architecture that cleanly separates the **graphical u
 The processing pipeline executes five sequential stages:
 
 1. **Loading & preprocessing** — DICOM/NIfTI loading via DCMTK and ITK I/O, isotropic resampling, and median filtering.
-2. **Landmark import** — parsing of ALI_CBCT JSON markup files, with optional manual refinement.
+2. **Landmark detection / import** — in-application detection via the integrated ALI_CBCT process, or parsing of existing ALI_CBCT JSON markup files, with optional manual refinement.
 3. **Landmark-initialized rigid registration** — translation initialized from cephalometric landmarks, then refined by Mattes Mutual Information over a 3-level multi-resolution pyramid.
 4. **2D slice extraction & FOV normalization** — axial, coronal, and sagittal slices centered on the reference landmark, normalized across heterogeneous CBCT protocols.
 5. **MCAGPC validation & export** — composite quality metric (SSIM, NCC, landmark displacement) and structured output.
@@ -49,7 +49,7 @@ The processing pipeline executes five sequential stages:
 
 ## Key Features
 
-- **Landmark-initialized rigid registration** — uses cephalometric landmarks (ANS, Sella, Nasion, PNS) from [ALI_CBCT](https://github.com/lucanchling/ALI_CBCT) JSON markup files to initialize Mattes Mutual Information optimization, preventing convergence to local minima.
+- **Landmark-initialized rigid registration** — uses cephalometric landmarks (ANS, Sella, Nasion, PNS), detected in-application via the integrated [ALI_CBCT](https://github.com/lucanchling/ALI_CBCT) process or imported from JSON markup files, to initialize Mattes Mutual Information optimization, preventing convergence to local minima.
 - **Multi-resolution 3D rigid registration** — ITK-based pipeline with a 3-level pyramid (shrink factors 4, 2, 1).
 - **Automatic FOV normalization** — handles heterogeneous CBCT acquisition protocols (large craniofacial FOV vs. reduced dental FOV).
 - **Anatomically guided 2D slice extraction** — axial, coronal, and sagittal slices centered on a user-selected reference landmark.
@@ -129,7 +129,7 @@ Import the longitudinal acquisitions via **File → Open NIfTI** (or **Open DICO
 ![Step 1 — File selection dialog](docs/images/image1_2.png)
 
 ### Step 2 — Cephalometric Landmarks
-Import the ALI_CBCT JSON markup files via **File → Load Landmarks JSON**, one per timepoint. CBCTAlign extracts the landmark coordinates and populates a color-coded table with the name, abbreviation, and (x, y, z) position in millimeters for each timepoint.
+Detect the landmarks directly within CBCTAlign by running the integrated ALI_CBCT process (select the model and reference landmark), **or** import existing ALI_CBCT JSON markup files via **File → Load Landmarks JSON**, one per timepoint. CBCTAlign extracts the landmark coordinates and populates a color-coded table with the name, abbreviation, and (x, y, z) position in millimeters for each timepoint.
 
 ![Step 2 — Landmarks](docs/images/image2.png)
 
